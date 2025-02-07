@@ -1,0 +1,6 @@
+FileVersion = 1
+Dependencies = {corlib = "*", json = "*"}
+
+[Project]
+Name = "gLTF"
+StartupObject = "gLTF.Program"
