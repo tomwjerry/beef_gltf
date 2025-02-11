@@ -1,10 +1,12 @@
-namespace gLTF;
-
 using System;
 using System.Collections;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+
+namespace gLTF;
+
+using internal gLTF;
 
 class gLTF
 {
@@ -16,7 +18,7 @@ class gLTF
 	/*
 	    Main library interface procedures
 	*/
-	public static Result<Data*, DError> load_from_file(String file_name)
+	public static Result<GLTFData, DError> load_from_file(String file_name)
     {
         if (!File.Exists(file_name))
         {
@@ -59,7 +61,7 @@ class gLTF
     	}
     }
 
-	public static Result<Data*, DError> parse(List<uint8> file_content, Options opt)
+	public static Result<GLTFData, DError> parse(List<uint8> file_content, Options opt)
     {
         // Seems always be true? Why delete content before use? 
 	    if (opt.delete_content)
@@ -67,7 +69,7 @@ class gLTF
 	        //file_content.Clear();
 	    }
 
-        Data* retdata = new Data();
+        GLTFData retdata = new GLTFData();
 
 	    if (file_content.Count < GLB_HEADER_SIZE)
         {
@@ -224,7 +226,7 @@ class gLTF
 	        content_index += GLB_CHUNK_HEADER_SIZE;
 
             retdata.buffers[buf_idx].uri =
-                .Byte(*(uint8[]*)file_content.GetRange(content_index).Ptr);
+                .Byte(file_content.GetRange(content_index));
 	        content_index += uint32(chunk_header.length);
 	    }
 
@@ -232,29 +234,29 @@ class gLTF
 	}
 
 	// It is safe to pass null here
-	public void unload(ref Data? data)
+	public void unload(ref GLTFData data)
     {
 	    if (data == null)
         {
 	        return;
 	    }
 
-	    data.Value.json_value = .Null;
-	    accessors_free(data.Value.accessors);
-	    animations_free(data.Value.animations);
-	    buffers_free(data.Value.buffers);
-	    buffer_views_free(data.Value.buffer_views);
-	    cameras_free(data.Value.cameras);
-	    images_free(data.Value.images);
-	    materials_free(data.Value.materials);
-	    meshes_free(data.Value.meshes);
-	    nodes_free(data.Value.nodes);
-	    samplers_free(data.Value.samplers);
-	    scenes_free(data.Value.scenes);
-	    skins_free(data.Value.skins);
-	    textures_free(data.Value.textures);
-	    extensions_names_free(data.Value.extensions_required);
-	    extensions_names_free(data.Value.extensions_used);
+	    data.json_value = .Null;
+	    accessors_free(data.accessors);
+	    animations_free(data.animations);
+	    buffers_free(data.buffers);
+	    buffer_views_free(data.buffer_views);
+	    cameras_free(data.cameras);
+	    images_free(data.images);
+	    materials_free(data.materials);
+	    meshes_free(data.meshes);
+	    nodes_free(data.nodes);
+        samplers_free(data.samplers);
+	    scenes_free(data.scenes);
+	    skins_free(data.skins);
+	    textures_free(data.textures);
+	    extensions_names_free(data.extensions_required);
+	    extensions_names_free(data.extensions_used);
 	}
 
 	/*
@@ -291,8 +293,9 @@ class gLTF
         {
 	        return uri;
 	    }
-	    if (uri.Value case .Byte(uint8[] bytes) && bytes == null)
+	    if (uri.Value case .Byte(var bytes))
         {
+            bytes.Clear();
 	        return uri;
 	    }
 
@@ -303,13 +306,13 @@ class gLTF
             {
                 List<uint8> bytes = new List<uint8>();
                 // Check if this is possible file and if so load it
-                let res = File.ReadAll(scope $"{gltf_dir}{str_data}", bytes);
+                let res = File.ReadAll(scope $"{gltf_dir}/{str_data}", bytes);
                 if (res case .Err)
                 {
                     return uri;
                 }
     	        
-	            return Uri.Byte(*(uint8[]*)bytes.Ptr);
+	            return Uri.Byte(bytes);
 	        }
 
     	    String type = scope String(str_data.Substring(type_idx));
@@ -342,9 +345,9 @@ class gLTF
 
 	private static void uri_free(Uri uri)
     {
-	    if (uri case .Byte(uint8[] bytes))
+	    if (uri case .Byte(var bytes))
         {
-            delete bytes;
+            bytes.Clear();
         }    
 	}
 
@@ -1054,7 +1057,7 @@ class gLTF
 
                     if (TryGetStr(bufObj, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(new String(name)), gltf_dir).Value;
+                        res[idx].uri = uri_parse(Uri.Str(new String(uri)), gltf_dir).Value;
                     }
 
 		            if (bufObj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))

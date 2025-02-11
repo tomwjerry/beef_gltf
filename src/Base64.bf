@@ -1,11 +1,10 @@
 /**
  * Stolen from a pull request: https://github.com/beefytech/Beef/pull/1699/commits
  */
-
-namespace gLTF;
-
 using System;
 using System.Collections;
+
+namespace gLTF;
 
 public static class Base64
 {

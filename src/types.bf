@@ -1,7 +1,7 @@
-namespace gLTF;
-
 using System;
 using System.Collections;
+
+namespace gLTF;
 
 struct Options
 {
@@ -23,7 +23,7 @@ struct GLB_Chunk_Header
 	public uint32 type;
 }
 
-struct Data
+class GLTFData
 {
 	public Asset asset;
 	public Accessor[] accessors;
@@ -147,7 +147,7 @@ enum Component_Type
 enum Uri
 {
 	case Str(String str);
-	case Byte(uint8[] byte);
+	case Byte(Span<uint8> byte);
 }
 
 struct Accessor
