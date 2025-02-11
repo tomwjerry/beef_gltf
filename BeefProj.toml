@@ -3,4 +3,5 @@ Dependencies = {corlib = "*", json = "*"}
 
 [Project]
 Name = "gLTF"
-StartupObject = "gLTF.Program"
+TargetType = "BeefLib"
+StartupObject = "gLTF.gLTF"

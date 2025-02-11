@@ -4,8 +4,9 @@ using System;
 using System.Collections;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 
-class gltf
+class gLTF
 {
 	private static int GLB_MAGIC = 0x46546c67;
 	private static int GLB_HEADER_SIZE = sizeof(GLB_Header);
@@ -22,7 +23,7 @@ class gltf
             return .Err(DError.GLTFError(GLTF_Error(Error_Type.No_File, "load_from_file", GLTF_Param_Error() { name = file_name })));
         }
 
-        List<uint8> file_content = scope List<uint8>();
+        List<uint8> file_content = new List<uint8>();
 
         let res = File.ReadAll(file_name, file_content);
 	    if (res case .Err)
@@ -58,11 +59,12 @@ class gltf
     	}
     }
 
-	private static Result<Data, DError> parse(List<uint8> file_content, Options opt)
+	public static Result<Data, DError> parse(List<uint8> file_content, Options opt)
     {
+        // Seems always be true? Why delete content before use? 
 	    if (opt.delete_content)
         {
-	        file_content.Clear();
+	        //file_content.Clear();
 	    }
 
         Data retdata = Data();
@@ -102,7 +104,14 @@ class gltf
 	        content_index += uint32(json_header.length);
 	    }
 
-        let jsonStr = *(String*)json_data.Ptr;
+        Encoding endcoding = Encoding.ASCII;
+        String jsonStr = new String();
+        if (endcoding.DecodeToUTF8(json_data, jsonStr) case .Err(let err))
+        {
+            String errStr = new String();
+            err.ToString(errStr);
+            return .Err(.GLTFError(GLTF_Error(.Cant_Read_File, "parse", GLTF_Param_Error() { name = errStr })));
+        }
 	    Json.JsonTree jsonTree = new Json.JsonTree();
         let res = Json.Json.ReadJson(jsonStr, jsonTree);
 	    retdata.json_value = jsonTree.root;
@@ -112,41 +121,46 @@ class gltf
 	        return .Err(.JsonError(JSON_Error(json_err, jsonTree)));
 	    }
 
-	    if (asset_parse(retdata.json_value) case .Ok(retdata.asset)) { }
-   
-        if (accessors_parse(retdata.json_value) case .Ok(retdata.accessors)) { }
-
-        if (animations_parse(retdata.json_value) case .Ok(retdata.animations)) { }
-
-        if (buffers_parse(retdata.json_value, opt.gltf_dir) case .Ok(retdata.buffers)) { }
-
-        if (buffer_views_parse(retdata.json_value) case .Ok(retdata.buffer_views)) { }
-
-        if (cameras_parse(retdata.json_value) case .Ok(retdata.cameras)) { }
-
-        if (images_parse(retdata.json_value, opt.gltf_dir) case .Ok(retdata.images)) { }
-
-        if (materials_parse(retdata.json_value) case .Ok(retdata.materials)) { }
-
-        if (meshes_parse(retdata.json_value) case .Ok(retdata.meshes)) { }
-
-        if (nodes_parse(retdata.json_value) case .Ok(retdata.nodes)) { }
-
-        if (samplers_parse(retdata.json_value) case .Ok(retdata.samplers)) { }
-	    
-        if (scenes_parse(retdata.json_value) case .Ok(retdata.scenes)) { }
-
-        if (skins_parse(retdata.json_value) case .Ok(retdata.skins)) { }
-
-        if (textures_parse(retdata.json_value) case .Ok(retdata.textures)) { }
-
-        retdata.extensions_used = extensions_names_parse(retdata.json_value, Types.EXTENSIONS_USED_KEY);
-
-        retdata.extensions_required = extensions_names_parse(retdata.json_value, Types.EXTENSIONS_REQUIRED_KEY);
-
-
         if (retdata.json_value case .Object(let keyObj))
         {
+    	    if (asset_parse(keyObj) case .Ok(let asset))
+            {
+                retdata.asset = asset;
+            }
+       
+            if (accessors_parse(keyObj) case .Ok(let accessors))
+            {
+                retdata.accessors = accessors;
+            }
+    
+            if (animations_parse(keyObj) case .Ok(retdata.animations)) { }
+    
+            if (buffers_parse(keyObj, opt.gltf_dir) case .Ok(retdata.buffers)) { }
+    
+            if (buffer_views_parse(keyObj) case .Ok(retdata.buffer_views)) { }
+    
+            if (cameras_parse(keyObj) case .Ok(retdata.cameras)) { }
+    
+            if (images_parse(keyObj, opt.gltf_dir) case .Ok(retdata.images)) { }
+    
+            if (materials_parse(keyObj) case .Ok(retdata.materials)) { }
+    
+            if (meshes_parse(keyObj) case .Ok(retdata.meshes)) { }
+    
+            if (nodes_parse(keyObj) case .Ok(retdata.nodes)) { }
+    
+            if (samplers_parse(keyObj) case .Ok(retdata.samplers)) { }
+    	    
+            if (scenes_parse(keyObj) case .Ok(retdata.scenes)) { }
+    
+            if (skins_parse(keyObj) case .Ok(retdata.skins)) { }
+    
+            if (textures_parse(keyObj) case .Ok(retdata.textures)) { }
+    
+            retdata.extensions_used = extensions_names_parse(keyObj, Types.EXTENSIONS_USED_KEY);
+    
+            retdata.extensions_required = extensions_names_parse(keyObj, Types.EXTENSIONS_REQUIRED_KEY);
+
             if (keyObj.TryGetValue(Types.SCENE_KEY, let sceneObj) &&
                 sceneObj case .Number(let scene))
             {
@@ -208,21 +222,18 @@ class gltf
 	/*
 	    Utilitiy procedures
 	*/
-	private static String[] extensions_names_parse(Json.JsonElement object, String name)
+	private static String[] extensions_names_parse(Json.JsonObjectData object, String name)
     {
         String[] retstr = new String[0];
-	    if (object.AsObject().TryGetValue(name, let outele))
+	    if (TryGetArr(object, name, let arr))
         {
-            if (outele case .Array(let arr))
+            retstr = new String[arr.Count];
+            for (int i = 0; i < arr.Count; i++)
             {
-                retstr = new String[arr.Count];
-                for (int i = 0; i < arr.Count; i++)
-                {
-                    retstr[i] = new String(arr[i].AsString());
-                }
-    
-                return retstr;
+                retstr[i] = new String(arr[i].AsString());
             }
+
+            return retstr;
         }
         
         return retstr;
@@ -311,51 +322,43 @@ class gltf
 	/*
 	    Asseet parsing
 	*/
-	private static Result<Asset, DError> asset_parse(Json.JsonElement object)
+	private static Result<Asset, DError> asset_parse(Json.JsonObjectData object)
     {
         Asset res = Asset();
-	    if (object case .Object(let obj) &&
-            obj.TryGetValue(Types.ASSET_KEY, let foundasset))
+	    if (TryGetObj(object, Types.ASSET_KEY, let lookingDict))
         {
             bool version_found = false;
-            if (foundasset case .Object(let lookingDict))
+            if (TryGetStr(lookingDict, "copyright", let copyright))
             {
-                if (lookingDict.TryGetValue("copyright", let strobj) &&
-                    strobj case .String(StringView copyright))
-                {
-                    res.copyright = new String(copyright);
-                }
+                res.copyright = new String(copyright);
+            }
 
-                if (lookingDict.TryGetValue("generator", let strobj2) &&
-                    strobj2 case .String(StringView generator))
-                {
-                    res.generator = new String(generator);
-                }
+            if (TryGetStr(lookingDict, "generator", let generator))
+            {
+                res.generator = new String(generator);
+            }
 
-                if (lookingDict.TryGetValue("minVersion", let doubleobj) &&
-                    doubleobj case .Number(double version))
-                {
-                    version_found = true;
-                    res.min_version = (float)version;
-                    res.version = (float)version;
-                }
+            if (TryGetNum(lookingDict, "minVersion", let minVersion))
+            {
+                version_found = true;
+                res.min_version = (float)minVersion;
+                res.version = (float)minVersion;
+            }
 
-                if (lookingDict.TryGetValue("version", let doubleobj2) &&
-                    doubleobj2 case .Number(double version))
-                {
-                    version_found = true;
-                    res.version = (float)version;
-                }
+            if (TryGetNum(lookingDict, "version", let version))
+            {
+                version_found = true;
+                res.version = (float)version;
+            }
 
-                if (lookingDict.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
-                {
-                    res.extensions = extensions;
-                }
+            if (lookingDict.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
+            {
+                res.extensions = extensions;
+            }
 
-                if (lookingDict.TryGetValue(Types.EXTRAS_KEY, let extras))
-                {
-                    res.extras = extras;
-                }
+            if (lookingDict.TryGetValue(Types.EXTRAS_KEY, let extras))
+            {
+                res.extras = extras;
             }
 
             if (!version_found)
@@ -376,13 +379,11 @@ class gltf
 	/*
 	    Accessors parsing
 	*/
-	private static Result<Accessor[], DError> accessors_parse(Json.JsonElement object)
+	private static Result<Accessor[], DError> accessors_parse(Json.JsonObjectData object)
     {
-	    if (object case .Object(let obj) &&
-            obj.TryGetValue(Types.ACCESSORS_KEY, let foundAccessor) &&
-            foundAccessor case .Array(let accessor_array))
+	    if (TryGetArr(object, Types.ACCESSORS_KEY, let accessor_array))
         {
-    	    Accessor[] res = new Accessor[]();
+    	    Accessor[] res = new Accessor[(int)accessor_array.Count];
 
             for (int idx = 0; idx < accessor_array.Count; idx++)
             {
@@ -392,40 +393,34 @@ class gltf
                     bool count_set = false;
                     bool type_set = false;
         
-        	        if (access.TryGetValue("bufferView", let bufferViewObj) &&
-                        bufferViewObj case .Number(double bufferView))
+        	        if (TryGetNum(access, "bufferView", let bufferView))
                     {
         	            res[idx].buffer_view = (int)bufferView;
                     }
     
-                    if (access.TryGetValue("byteOffset", let byteOffsetObj) &&
-                        byteOffsetObj case .Number(double byteOffset))
+                    if (TryGetNum(access, "byteOffset", let byteOffset))
                     {
                         res[idx].byte_offset = (int)byteOffset;
                     }
     
-                    if (access.TryGetValue("componentType", let componentTypeObj) &&
-                        componentTypeObj case .Number(double componentTypeset))
+                    if (TryGetNum(access, "componentType", let componentTypeset))
                     {
                         res[idx].component_type = (Component_Type)componentTypeset;
                         component_type_set = true;
                     }
     
-                    if (access.TryGetValue("normalized", let normalizedObj) &&
-                        normalizedObj case .Bool(bool normalized))
+                    if (TryGetBool(access, "normalized", let normalized))
                     {
                         res[idx].normalized = normalized;
                     }
     
-                    if (access.TryGetValue("count", let countObj) &&
-                        countObj case .Number(double count))
+                    if (TryGetNum(access, "count", let count))
                     {
                         res[idx].count = (int)count;
                         count_set = true;
                     }
     
-                    if (access.TryGetValue("type", let typeObj) &&
-                        typeObj case .String(StringView type))
+                    if (TryGetStr(access, "type", let type))
                     {
     	                // Required
     	                switch (scope String(type))
@@ -467,12 +462,11 @@ class gltf
         
         	                default:
         	                    return .Err(.GLTFError(GLTF_Error(
-                                    .Invalid_Type, "accessors_parse", GLTF_Param_Error(){ name = scope String(type), index = idx})));
+                                    .Invalid_Type, "accessors_parse", GLTF_Param_Error(){ name = new String(type), index = idx})));
         	            }
                     }
     
-    	            if (access.TryGetValue("max", let maxObj) &&
-                        maxObj case .Array(let maxArr))
+    	            if (TryGetArr(access, "max", let maxArr))
                     {
     	                float[16] maxes = .(0,);
     	                for (int i = 0; i < maxArr.Count && i < 16; i++)
@@ -485,8 +479,7 @@ class gltf
     	                res[idx].max = maxes;
                     }
 
-                    if (access.TryGetValue("min", let minObj) &&
-                        minObj case .Array(let minArr))
+                    if (TryGetArr(access, "min", let minArr))
                     {
                         float[16] mines = .(0,);
                         for (int i = 0; i < minArr.Count && i < 16; i++)
@@ -504,8 +497,7 @@ class gltf
                         res[idx].sparse = accessor_sparse_parse(sparse);
                     }
 
-                    if (access.TryGetValue("name", let nameObj) &&
-                        nameObj case .String(StringView name))
+                    if (TryGetStr(access, "name", let name))
                     {
                         res[idx].name = new String(name);
                     }
@@ -618,10 +610,11 @@ class gltf
 
 	private static Result<Accessor_Sparse_Indices[], DError> sparse_indices_parse(Json.JsonElement jsonArr)
     {
-        Accessor_Sparse_Indices[] res = new Accessor_Sparse_Indices[]();
+        Accessor_Sparse_Indices[] res = new Accessor_Sparse_Indices[0];
 
         if (jsonArr case .Array(let accessorArray))
         {
+            res = new Accessor_Sparse_Indices[(int)accessorArray.Count];
             for (int i = 0; i < accessorArray.Count; i++)
             {
 	            bool buffer_view_set = false;
@@ -629,23 +622,20 @@ class gltf
 
                 if (accessorArray[i] case .Object(let indice))
                 {
-	                if (indice.TryGetValue("bufferView", let bufferViewObject) &&
-                        bufferViewObject case .Number(double bufferView))
+	                if (TryGetNum(indice, "bufferView", let bufferView))
                     {
     	                // Required
     	                res[i].buffer_view = (int)bufferView;
     	                buffer_view_set = true;
                     }
 
-                    if (indice.TryGetValue("byteOffset", let byteOffsetObject) &&
-                        byteOffsetObject case .Number(double byteOffset))
+                    if (TryGetNum(indice, "byteOffset", let byteOffset))
                     {
                         // Default 0
                         res[i].byte_offset = (int)byteOffset;
                     }
 
-                    if (indice.TryGetValue("componentType", let componentTypeObject) &&
-                        componentTypeObject case .Number(double componentType))
+                    if (TryGetNum(indice, "componentType", let componentType))
                     {
                         // Required
                         res[i].component_type = (Component_Type)componentType;
@@ -687,26 +677,25 @@ class gltf
 
 	private static Result<Accessor_Sparse_Values[], DError> sparse_values_parse(Json.JsonElement jsonArr)
     {
-        Accessor_Sparse_Values[] res = new Accessor_Sparse_Values[]();
+        Accessor_Sparse_Values[] res = new Accessor_Sparse_Values[0];
 
         if (jsonArr case .Array(let accessorArray))
         {
+            res = new Accessor_Sparse_Values[accessorArray.Count];
             for (int i = 0; i < accessorArray.Count; i++)
             {
                 bool buffer_view_set = false;
 
                 if (accessorArray[i] case .Object(let value))
                 {
-                    if (value.TryGetValue("bufferView", let bufferViewObject) &&
-                        bufferViewObject case .Number(double bufferView))
+                    if (TryGetNum(value, "bufferView", let  bufferView))
                     {
                         // Required
                         res[i].buffer_view = (int)bufferView;
                         buffer_view_set = true;
                     }
 
-                    if (value.TryGetValue("byteOffset", let byteOffsetObject) &&
-                        byteOffsetObject case .Number(double byteOffset))
+                    if (TryGetNum(value, "byteOffset", let byteOffset))
                     {
                         // Default 0
                         res[i].byte_offset = (int)byteOffset;
@@ -740,13 +729,13 @@ class gltf
 	/*
 	    Animations parsing
 	*/
-	private static Result<Animation[], DError> animations_parse(Json.JsonElement object)
+	private static Result<Animation[], DError> animations_parse(Json.JsonObjectData object)
     {
-        Animation[] res = new Animation[]();
+        Animation[] res = new Animation[0];
 
-        if (object case .Object(let obj) &&
-            TryGetArr(obj, Types.ANIMATIONS_KEY, let animations_array))
+        if (TryGetArr(object, Types.ANIMATIONS_KEY, let animations_array))
         {
+            res = new Animation[animations_array.Count];
 		    for (int i = 0; i < animations_array.Count; i++)
             {
 		        if (animations_array[i] case .Object(let ani))
@@ -815,80 +804,10 @@ class gltf
 	    }
 	    delete animations;
 	}
-
-    private static bool TryGetObj(
-        Json.JsonObjectData ele, String key, out Json.JsonObjectData obj)
-    {
-        if (ele.TryGetValue(key, let immeditary))
-        {
-            if (immeditary case .Object(out obj))
-            {
-                return true;
-            }
-        }
-        obj = default;
-        return false;
-    }
-
-    private static bool TryGetArr(
-        Json.JsonObjectData ele, String key, out List<Json.JsonElement> arr)
-    {
-        if (ele.TryGetValue(key, let immeditary))
-        {
-            if (immeditary case .Array(out arr))
-            {
-                return true;
-            }
-        }
-        arr = default;
-        return false;
-    }
-
-    private static bool TryGetStr(
-        Json.JsonObjectData ele, String key, out StringView str)
-    {
-        if (ele.TryGetValue(key, let immeditary))
-        {
-            if (immeditary case .String(out str))
-            {
-                return true;
-            }
-        }
-        str = default;
-        return false;
-    }
-
-    private static bool TryGetNum(
-        Json.JsonObjectData ele, String key, out double num)
-    {
-        if (ele.TryGetValue(key, let immeditary))
-        {
-            if (immeditary case .Number(out num))
-            {
-                return true;
-            }
-        }
-        num = default;
-        return false;
-    }
-
-    private static bool TryGetBool(
-        Json.JsonObjectData ele, String key, out bool boolVal)
-    {
-        if (ele.TryGetValue(key, let immeditary))
-        {
-            if (immeditary case .Bool(out boolVal))
-            {
-                return true;
-            }
-        }
-        boolVal = default;
-        return false;
-    }
 	
 	private static Result<Animation_Channel[], DError> animation_channels_parse(List<Json.JsonElement> objArr)
     {
-		Animation_Channel[] res = new Animation_Channel[]();
+		Animation_Channel[] res = new Animation_Channel[objArr.Count];
 
 		for (int i = 0; i < objArr.Count; i++)
         {
@@ -996,7 +915,7 @@ class gltf
 
 	private static Result<Animation_Sampler[], DError> animation_samplers_parse(List<Json.JsonElement> objArr)
     {
-        Animation_Sampler[] res = scope Animation_Sampler[]();
+        Animation_Sampler[] res = new Animation_Sampler[objArr.Count];
 
         for (int idx = 0; idx < objArr.Count; idx++)
         {
@@ -1031,7 +950,7 @@ class gltf
 
 		                default:
 		                    return .Err(.GLTFError(GLTF_Error(
-                                .Invalid_Type, "animation_samplers_parse", GLTF_Param_Error(){ name = scope String(interpolation), index = idx })));
+                                .Invalid_Type, "animation_samplers_parse", GLTF_Param_Error(){ name = new String(interpolation), index = idx })));
 		            }
                 }
 
@@ -1069,13 +988,14 @@ class gltf
         return res;
     }
 
-	private static Result<Buffer[], DError> buffers_parse(Json.JsonElement obj, String gltf_dir)
+	private static Result<Buffer[], DError> buffers_parse(Json.JsonObjectData obj, String gltf_dir)
     {
-        Buffer[] res = scope Buffer[]();
+        Buffer[] res = new Buffer[0];
 
-        if (obj case .Object(let buffobj) &&
-            TryGetArr(buffobj, Types.BUFFERS_KEY, let buffers_array))
+        if (TryGetArr(obj, Types.BUFFERS_KEY, let buffers_array))
 		{
+            res = new Buffer[buffers_array.Count];
+
 		    for (int idx = 0; idx < buffers_array.Count; idx++)
             {
 		        bool byte_length_set = false;
@@ -1091,12 +1011,12 @@ class gltf
 
 		            if (TryGetStr(bufObj, "name", let name))
                     {
-		                res[idx].name = scope String(name);
+		                res[idx].name = new String(name);
                     }
 
                     if (TryGetStr(bufObj, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(scope String(name)), gltf_dir).Value;
+                        res[idx].uri = uri_parse(Uri.Str(new String(name)), gltf_dir).Value;
                     }
 
 		            if (bufObj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1140,13 +1060,13 @@ class gltf
 	/*
 	    Buffer Views parsing
 	*/
-	private static Result<Buffer_View[], DError> buffer_views_parse(Json.JsonElement object)
+	private static Result<Buffer_View[], DError> buffer_views_parse(Json.JsonObjectData object)
     {
-        Buffer_View[] res = scope Buffer_View[]();
+        Buffer_View[] res = new Buffer_View[0];
 
-        if (object case .Object(let buffobj) &&
-            TryGetArr(buffobj, Types.BUFFER_VIEWS_KEY, let views_array))
+        if (TryGetArr(object, Types.BUFFER_VIEWS_KEY, let views_array))
         {
+            res = new Buffer_View[views_array.Count];
 		    for (int idx = 0; idx < views_array.Count; idx++)
             {
                 bool buffer_set = false;
@@ -1180,7 +1100,7 @@ class gltf
     
     		        if (TryGetStr(viewObj, "name", let name))
                     {
-    		            res[idx].name = scope String(name);
+    		            res[idx].name = new String(name);
                     }
     
     		        if (TryGetNum(viewObj, "target", let target))
@@ -1229,20 +1149,20 @@ class gltf
 	/*
 	    Cameras parsing
 	*/
-	private static Result<Camera[], DError> cameras_parse(Json.JsonElement object)
+	private static Result<Camera[], DError> cameras_parse(Json.JsonObjectData object)
     {
-        Camera[] res = scope Camera[]();
+        Camera[] res = new Camera[0];
 
-        if (object case .Object(let camarrobj) &&
-            TryGetArr(camarrobj, Types.CAMERAS_KEY, let cameras_array))
+        if (TryGetArr(object, Types.CAMERAS_KEY, let cameras_array))
         {
+            res = new Camera[cameras_array.Count];
 		    for (int idx = 0; idx < cameras_array.Count; idx++)
             {
 		        if (cameras_array[idx] case .Object(let camobj))
                 {
 		            if (TryGetStr(camobj, "name", let name))
                     {
-                        res[idx].name = scope String(name);
+                        res[idx].name = new String(name);
                     }
 
 		            if (TryGetObj(camobj, "orthographic", let orthographic))
@@ -1411,13 +1331,13 @@ class gltf
 	/*
 	    Images parsing
 	*/
-	private static Result<Image[], DError> images_parse(Json.JsonElement object, String gltf_dir)
+	private static Result<Image[], DError> images_parse(Json.JsonObjectData object, String gltf_dir)
     {
-        Image[] res = scope Image[]();
+        Image[] res = new Image[0];
 
-	    if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.IMAGES_KEY, let obj_array))
+	    if (TryGetArr(object, Types.IMAGES_KEY, let obj_array))
         {
+            res = new Image[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
 		        if (obj_array[idx] case .Object(let parseObject))
@@ -1439,18 +1359,18 @@ class gltf
                                 break;
     		                default:
     		                    return .Err(.GLTFError(GLTF_Error(
-                                    .Unknown_File_Type, "images_parse", GLTF_Param_Error(){ name = scope String(mimeType), index = idx })));
+                                    .Unknown_File_Type, "images_parse", GLTF_Param_Error(){ name = new String(mimeType), index = idx })));
     		            }
                     }
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-                        res[idx].name = scope String(name);
+                        res[idx].name = new String(name);
                     }
 
                     if (TryGetStr(parseObject, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(scope String(name)), gltf_dir).Value;
+                        res[idx].uri = uri_parse(Uri.Str(new String(name)), gltf_dir).Value;
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1485,13 +1405,13 @@ class gltf
 	/*
 	    Materials parsing
 	*/
-	private static Result<Material[], DError> materials_parse(Json.JsonElement object)
+	private static Result<Material[], DError> materials_parse(Json.JsonObjectData object)
     {
-	    Material[] res = scope Material[]();
+	    Material[] res = new Material[0];
 
-	    if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.MATERIALS_KEY, let obj_array))
+	    if (TryGetArr(object, Types.MATERIALS_KEY, let obj_array))
         {
+            res = new Material[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 if (obj_array[idx] case .Object(let parseObject))
@@ -1514,7 +1434,7 @@ class gltf
                                 break;
     		                default:
     		                    return .Err(.GLTFError(GLTF_Error(
-                                    .Invalid_Type, "materials_parse", GLTF_Param_Error(){ name = scope String(alphaMode), index = idx })));
+                                    .Invalid_Type, "materials_parse", GLTF_Param_Error(){ name = new String(alphaMode), index = idx })));
 		                }
                     }
 
@@ -1549,7 +1469,7 @@ class gltf
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-		                res[idx].name = scope String(name);
+		                res[idx].name = new String(name);
                     }
 
 		            if (TryGetObj(parseObject, "normalTexture", let normalTexture))
@@ -1696,20 +1616,20 @@ class gltf
 	/*
 	    Meshes parsing
 	*/
-	private static Result<Mesh[], DError> meshes_parse(Json.JsonElement object)
+	private static Result<Mesh[], DError> meshes_parse(Json.JsonObjectData object)
     {
-        Mesh[] res = scope Mesh[]();
+        Mesh[] res = new Mesh[0];
 
-        if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.MESHES_KEY, let obj_array))
+        if (TryGetArr(object, Types.MESHES_KEY, let obj_array))
         {
+            res = new Mesh[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-                        res[idx].name = scope String(name);
+                        res[idx].name = new String(name);
                     }
 
 		            if (TryGetArr(parseObject, "primitives", let primitives))
@@ -1772,10 +1692,11 @@ class gltf
 
 	private static Result<Mesh_Primitive[], DError> mesh_primitives_parse(List<Json.JsonElement> array)
     {
-		Mesh_Primitive[] res = scope Mesh_Primitive[]();
+		Mesh_Primitive[] res = new Mesh_Primitive[0];
 
 		for (int idx = 0; idx < array.Count; idx++)
         {
+            res = new Mesh_Primitive[array.Count];
 		    res[idx].mode = .Triangles;
 
 		    if (array[idx] case .Object(let parseObject))
@@ -1856,13 +1777,13 @@ class gltf
 	/*
 	    Nodes parsing
 	*/
-	private static Result<Node[], DError> nodes_parse(Json.JsonElement object)
+	private static Result<Node[], DError> nodes_parse(Json.JsonObjectData object)
     {
-        Node[] res = scope Node[]();
+        Node[] res = new Node[0];
 
-	    if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.NODES_KEY, let obj_array))
+	    if (TryGetArr(object, Types.NODES_KEY, let obj_array))
         {
+            res = new Node[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 res[idx].mat = .(1,);
@@ -1907,7 +1828,7 @@ class gltf
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-		                res[idx].name = scope String(name);
+		                res[idx].name = new String(name);
                     }
 
                     if (TryGetArr(parseObject, "scale", let scale))
@@ -2001,13 +1922,13 @@ class gltf
 	/*
 	    Samplers parsing
 	*/
-	private static Result<Sampler[], DError> samplers_parse(Json.JsonElement object)
+	private static Result<Sampler[], DError> samplers_parse(Json.JsonObjectData object)
     {
-        Sampler[] res = scope Sampler[]();
+        Sampler[] res = new Sampler[0];
 
-        if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.SAMPLERS_KEY, let obj_array))
+        if (TryGetArr(object, Types.SAMPLERS_KEY, let obj_array))
         {
+            res = new Sampler[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 res[idx].wrapS = .Repeat;
@@ -2039,7 +1960,7 @@ class gltf
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-		                res[idx].name = scope String(name);
+		                res[idx].name = new String(name);
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -2070,13 +1991,13 @@ class gltf
 	/*
 	    Scenes parsing
 	*/
-	private static Result<Scene[], DError> scenes_parse(Json.JsonElement object)
+	private static Result<Scene[], DError> scenes_parse(Json.JsonObjectData object)
     {
-	    Scene[] res = scope Scene[]();
+	    Scene[] res = new Scene[0];
 
-        if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.SCENES_KEY, let obj_array))
+        if (TryGetArr(object, Types.SCENES_KEY, let obj_array))
         {
+            res = new Scene[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 if (obj_array[idx] case .Object(let parseObject))
@@ -2095,7 +2016,7 @@ class gltf
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-                        res[idx].name = scope String(name);
+                        res[idx].name = new String(name);
                     }
 
                     if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -2133,13 +2054,13 @@ class gltf
 	/*
 	    Skins parsing
 	*/
-	private static Result<Skin[], DError> skins_parse(Json.JsonElement object)
+	private static Result<Skin[], DError> skins_parse(Json.JsonObjectData object)
     {
-        Skin[] res = scope Skin[]();
+        Skin[] res = new Skin[0];
 
-        if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.SKINS_KEY, let obj_array))
+        if (TryGetArr(object, Types.SKINS_KEY, let obj_array))
         {
+            res = new Skin[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 if (obj_array[idx] case .Object(let parseObject))
@@ -2163,7 +2084,7 @@ class gltf
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-		                res[idx].name = scope String(name);
+		                res[idx].name = new String(name);
                     }
 
 		            if (TryGetNum(parseObject, "skeleton", let skeleton))
@@ -2212,13 +2133,13 @@ class gltf
 	/*
 	    Textures parsing
 	*/
-	private static Result<Texture[], DError> textures_parse(Json.JsonElement object)
+	private static Result<Texture[], DError> textures_parse(Json.JsonObjectData object)
     {
-		Texture[] res = scope Texture[]();
+		Texture[] res = new Texture[0];
 
-        if (object case .Object(let immediateObj) &&
-            TryGetArr(immediateObj, Types.TEXTURES_KEY, let obj_array))
+        if (TryGetArr(object, Types.TEXTURES_KEY, let obj_array))
         {
+            res = new Texture[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
                 if (obj_array[idx] case .Object(let parseObject))
@@ -2235,7 +2156,7 @@ class gltf
 
                     if (TryGetStr(parseObject, "name", let name))
                     {
-                        res[idx].name = scope String(name);
+                        res[idx].name = new String(name);
                     }
 
                     if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -2261,5 +2182,80 @@ class gltf
             return;
         }
         delete textures;
-    }	
+    }
+
+    private static bool TryGetObj(
+        Json.JsonObjectData ele, String key, out Json.JsonObjectData obj)
+    {
+        if (ele.TryGetValue(key, let immeditary))
+        {
+            if (immeditary case .Object(out obj))
+            {
+                return true;
+            }
+        }
+        obj = default;
+        return false;
+    }
+
+    private static bool TryGetArr(
+        Json.JsonObjectData ele, String key, out List<Json.JsonElement> arr)
+    {
+        if (ele.TryGetValue(key, let immeditary))
+        {
+            if (immeditary case .Array(out arr))
+            {
+                return true;
+            }
+        }
+        arr = default;
+        return false;
+    }
+
+    private static bool TryGetStr(
+        Json.JsonObjectData ele, String key, out StringView str)
+    {
+        if (ele.TryGetValue(key, let immeditary))
+        {
+            if (immeditary case .String(out str))
+            {
+                return true;
+            }
+        }
+        str = default;
+        return false;
+    }
+
+    private static bool TryGetNum(
+        Json.JsonObjectData ele, String key, out double num)
+    {
+        if (ele.TryGetValue(key, let immeditary))
+        {
+            if (immeditary case .Number(out num))
+            {
+                return true;
+            }
+            else if (immeditary case .String(let str))
+            {
+                num = Double.Parse(str);
+                return true;
+            }
+        }
+        num = default;
+        return false;
+    }
+
+    private static bool TryGetBool(
+        Json.JsonObjectData ele, String key, out bool boolVal)
+    {
+        if (ele.TryGetValue(key, let immeditary))
+        {
+            if (immeditary case .Bool(out boolVal))
+            {
+                return true;
+            }
+        }
+        boolVal = default;
+        return false;
+    }
 }
