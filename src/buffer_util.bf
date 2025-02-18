@@ -60,7 +60,7 @@ class BufferUtil
 			buffer_view = data.buffer_views[(int)accessor.buffer_view];
 		}
 
-		if (accessor.sparse != null)
+		if (accessor.indices != null || accessor.values != null)
 		{
 		    Runtime.Assert(false, "Sparse not supported");
 		    return null;

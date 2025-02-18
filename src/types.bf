@@ -3,11 +3,19 @@ using System.Collections;
 
 namespace gLTF;
 
-struct Options
+struct Options : IDisposable
 {
 	public bool is_glb;
 	public bool delete_content;
 	public String gltf_dir;
+
+    public void Dispose()
+    {
+        if (gltf_dir != null)
+        {
+            delete gltf_dir;
+        }
+    }
 }
 
 struct GLB_Header
@@ -23,41 +31,6 @@ struct GLB_Chunk_Header
 	public uint32 type;
 }
 
-class GLTFData
-{
-	public Asset asset;
-	public Accessor[] accessors;
-	public Animation[] animations;
-	public Buffer[] buffers;
-	public Buffer_View[] buffer_views;
-	public Camera[] cameras;
-	public Image[] images;
-	public Material[] materials;
-	public Mesh[] meshes;
-	public Node[] nodes;
-	public Sampler[] samplers;
-	public int? scene;
-	public Scene[] scenes;
-	public Skin[] skins;
-	public Texture[] textures;
-	public String[] extensions_used;
-	public String[] extensions_required;
-	public Extensions extensions;        
-	public Extras extras;
-	public Json.JsonElement json_value;
-}
-
-struct GLTF_Param_Error
-{
-	public String name;
-	public int index;
-
-    public this()
-    {
-        this = default;
-    }
-}
-
 enum Error_Type
 {
 	Bad_GLB_Magic,
@@ -69,62 +42,80 @@ enum Error_Type
 	JSON_Missing_Section,
 	Unknown_File_Type,
 	Unsupported_Version,
-	Wrong_Chunk_Type
+	Wrong_Chunk_Type,
+    JSONError
 }
-
-struct JSON_Error
+struct GLTFError : IDisposable
 {
-	public Json.JsonError type;
-	public Json.JsonTree parser;
+    public bool isJsonError;
+	public Error_Type type;
+    public String proc_name;
+    public String errorName;
+    public int errorIndex;
+    public Json.JsonError jsonType;
+    public Json.JsonTree jsonParser;
 
     public this()
     {
         this = default;
+        isJsonError = false;
     }
 
     public this(Json.JsonError type, Json.JsonTree parser)
     {
-        this.type = type;
-        this.parser = parser;
-    }
-}
-
-struct GLTF_Error
-{
-	public Error_Type type;
-	public String proc_name;
-	public GLTF_Param_Error param;
-
-    public this()
-    {
         this = default;
+        this.jsonType = type;
+        this.jsonParser = parser;
+        this.type = .JSONError;
+        isJsonError = true;
     }
+
 
     public this(Error_Type type, String proc_name)
     {
+        this = default;
         this.type = type;
         this.proc_name = proc_name;
-        this.param = GLTF_Param_Error();
+        isJsonError = false;
     }
 
-    public this(Error_Type type, String proc_name, GLTF_Param_Error param)
+    public this(Error_Type type, String proc_name, String errorName)
     {
+        this = default;
         this.type = type;
         this.proc_name = proc_name;
-        this.param = param;
+        this.errorName = errorName;
+        isJsonError = false;
     }
-}
 
-enum DError
-{
-	case JsonError(JSON_Error err);
-	case GLTFError(GLTF_Error err);
+    public this(Error_Type type, String proc_name, String errorName, int errorIndex)
+    {
+        this = default;
+        this.type = type;
+        this.proc_name = proc_name;
+        this.errorName = errorName;
+        this.errorIndex = errorIndex;
+        isJsonError = false;
+    }
+
+    public void Dispose()
+    {
+        if (errorName != null)
+        {
+            delete errorName;
+        }
+
+        if (errorName != null)
+        {
+            delete errorName;
+        }
+    }
 }
 
 typealias Extensions = Json.JsonElement;
 typealias Extras = Json.JsonElement;
 
-struct Asset
+struct Asset : IDisposable
 {
 	public float version;
 	public float? min_version;
@@ -132,6 +123,19 @@ struct Asset
 	public String generator;
 	public Extensions extensions;
 	public Extras extras;
+
+    public void Dispose()
+    {
+        if (copyright != null)
+        {
+            delete copyright;
+        }
+
+        if (generator != null)
+        {
+            delete generator;
+        }
+    }    
 }
 
 enum Component_Type
@@ -150,7 +154,7 @@ enum Uri
 	case Byte(Span<uint8> byte);
 }
 
-struct Accessor
+struct Accessor : IDisposable
 {
 	public int byte_offset;
     public Component_Type component_type; // Required
@@ -161,9 +165,30 @@ struct Accessor
     public float[16]? max;
 	public float[16]? min;
     public String name;
-    public Accessor_Sparse? sparse;
     public Extensions extensions;
     public Extras extras;
+    public Accessor_Sparse_Indices[] indices; // Required
+    public Accessor_Sparse_Values[] values; // Required
+    public Extensions accessorExtensions;
+    public Extras accessorExtras;
+
+    public void Dispose()
+    {
+        if (indices != null)
+        {
+            delete indices;
+        }
+
+        if (values != null)
+        {
+            delete values;
+        }
+ 
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Accessor_Type
@@ -175,14 +200,6 @@ enum Accessor_Type
 	Matrix2,
 	Matrix3,
 	Matrix4
-}
-
-struct Accessor_Sparse
-{
-    public Accessor_Sparse_Indices[] indices; // Required
-    public Accessor_Sparse_Values[] values; // Required
-    public Extensions extensions;
-    public Extras extras;
 }
 
 struct Accessor_Sparse_Indices
@@ -202,29 +219,42 @@ struct Accessor_Sparse_Values
     public Extras extras;
 }
 
-struct Animation
+struct Animation : IDisposable
 {
 	public Animation_Channel[] channels;
 	public Animation_Sampler[] samplers;
 	public String name;
 	public Extensions extensions;
 	public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+
+        if (channels != null)
+        {
+            delete channels;
+        }
+
+        if (samplers != null)
+        {
+            delete channels;
+        }
+    }
 }
 
 struct Animation_Channel
 {
     public int sampler; // Required
-    public Animation_Channel_Target target; // Required
     public Extensions extensions;
 	public Extras extras;
-}
-
-struct Animation_Channel_Target
-{
     public Animation_Channel_Path path; // Required
     public int? node;
-    public Extensions extensions;
-    public Extras extras;
+    public Extensions targetExtensions;
+    public Extras targetExtras;
 }
 
 struct Animation_Sampler
@@ -251,16 +281,24 @@ enum Animation_Channel_Path
     Weights
 }
 
-struct Buffer
+struct Buffer : IDisposable
 {
     public int byte_length;
     public String name;
     public Uri uri;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
-struct Buffer_View
+struct Buffer_View : IDisposable
 {
     public int buffer;
     public int byte_offset;
@@ -270,6 +308,14 @@ struct Buffer_View
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Buffer_Type_Hint
@@ -281,12 +327,20 @@ enum Buffer_Type_Hint
 /*
     Camera related data structures
 */
-struct Camera
+struct Camera : IDisposable
 {
     public Camera_Type type;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Camera_Type
@@ -319,7 +373,7 @@ struct Orthographic_Camera
 /*
     Image related data structures
 */
-struct Image
+struct Image : IDisposable
 {
     public String name;
     public Uri uri;
@@ -327,6 +381,14 @@ struct Image
     public int? buffer_view;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Image_Type
@@ -338,7 +400,7 @@ enum Image_Type
 /*
     Material related data structures
 */
-struct Material
+struct Material : IDisposable
 {
     public float[3] emissive_factor;
     public Material_Alpha_Mode alpha_mode;
@@ -346,11 +408,26 @@ struct Material
     public bool double_sided;
     public String name;
     public Texture_Info emissive_texture;
-    public Material_Metallic_Roughness metallic_roughness;
     public Texture_Info normal_texture;
     public Texture_Info occlusion_texture;
     public Extensions extensions;
     public Extras extras;
+
+    public float[4] metallic_base_color_factor; // Default [1, 1, 1, 1]
+    public float metallic_factor;
+    public float metallic_roughness_factor; // Default 1
+    public Texture_Info metallic_base_color_texture;
+    public Texture_Info metallic_roughness_texture;
+    public Extensions metallic_extensions;
+    public Extras metallic_extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Material_Alpha_Mode
@@ -361,30 +438,37 @@ enum Material_Alpha_Mode
     Blend
 }
 
-struct Material_Metallic_Roughness
-{
-    public float[4] base_color_factor; // Default [1, 1, 1, 1]
-    public float metallic_factor;
-    public float roughness_factor; // Default 1
-    public Texture_Info base_color_texture;
-    public Texture_Info metallic_roughness_texture;
-    public Extensions extensions;
-    public Extras extras;
-}
-
 /*
     Mesh related data structures
 */
-struct Mesh
+struct Mesh : IDisposable
 {
     public Mesh_Primitive[] primitives;
     public float[] weights;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+
+        if (primitives != null)
+        {
+            delete primitives;
+        }
+
+        if (weights != null)
+        {
+            delete weights;
+        }
+    }
 }
 
-struct Mesh_Primitive
+struct Mesh_Primitive : IDisposable
 {
     public Dictionary<int, int> attributes; // Required
     public Mesh_Primitive_Mode mode; // Default Triangles(4)
@@ -393,6 +477,19 @@ struct Mesh_Primitive
     public Mesh_Target[] targets;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (attributes != null)
+        {
+            delete attributes;
+        }
+
+        if (targets != null)
+        {
+            delete targets;
+        }
+    }
 }
 
 enum Mesh_Primitive_Mode
@@ -407,12 +504,20 @@ enum Mesh_Primitive_Mode
 }
 
 // TODO: Verify if this is correct
-struct Mesh_Target
+struct Mesh_Target : IDisposable
 {
     public Mesh_Target_Type type;
     public int index;
     public Accessor data;
     public String name;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 // TODO: Verify if this is correct
@@ -432,7 +537,7 @@ enum Mesh_Target_Type
 /*
     Node data structure
 */
-struct Node
+struct Node : IDisposable
 {
     public float[16] mat; // Default Identity Matrix
     public float[4] rotation; // Default [x = 0, y = 0, z = 0, w = 1]
@@ -446,12 +551,30 @@ struct Node
     public float[] weights;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+
+        if (children != null)
+        {
+            delete children;
+        }
+
+        if (weights != null)
+        {
+            delete weights;
+        }
+    }
 }
 
 /*
     Sampler data structure
 */
-struct Sampler
+struct Sampler : IDisposable
 {
     public Wrap_Mode wrapS;
     public Wrap_Mode wrapT; // Default Repeat(10497)
@@ -460,6 +583,14 @@ struct Sampler
     public Minification_Filter min_filter;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum Wrap_Mode
@@ -488,18 +619,31 @@ enum Minification_Filter
 /*
     Scene data structure
 */
-struct Scene
+struct Scene : IDisposable
 {
     public int[] nodes;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+
+        if (nodes != null)
+        {
+            delete nodes;
+        }
+    }
 }
 
 /*
     Skin data structure
 */
-struct Skin
+struct Skin : IDisposable
 {
     public int[] joints;// Required
     public int? inverse_bind_matrices;
@@ -507,18 +651,39 @@ struct Skin
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+
+        if (joints != null)
+        {
+            delete joints;
+        }
+    }
 }
 
 /*
     Texture related data structures
 */
-struct Texture
+struct Texture : IDisposable
 {
     public int? sampler;
     public int? source;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public void Dispose()
+    {
+        if (name != null)
+        {
+            delete name;
+        }
+    }
 }
 
 enum TextureType
