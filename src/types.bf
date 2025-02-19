@@ -470,13 +470,19 @@ struct Mesh : IDisposable
 
 struct Mesh_Primitive : IDisposable
 {
-    public Dictionary<int, int> attributes; // Required
+    public Dictionary<StringView, int> attributes; // Required
     public Mesh_Primitive_Mode mode; // Default Triangles(4)
     public int? indices;
     public int? material;
     public Mesh_Target[] targets;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        targets = new Mesh_Target[]();
+    }
 
     public void Dispose()
     {

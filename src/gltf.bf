@@ -25,7 +25,7 @@ class gLTF
             return .Err(GLTFError(Error_Type.No_File, "load_from_file", file_name));
         }
 
-        List<uint8> file_content = new List<uint8>();
+        List<uint8> file_content = scope List<uint8>();
 
         let res = File.ReadAll(file_name, file_content);
 	    if (res case .Err)
@@ -123,7 +123,7 @@ class gLTF
 
         if (jsonTree.root case .Object(let keyObj))
         {
-            List<GLTFError> errorList = new List<GLTFError>();
+            List<GLTFError> errorList = scope List<GLTFError>();
             GLTFError err = GLTFError();
     	    if (asset_parse(keyObj, ref gltfdata.asset) case .Err(err))
             {
@@ -260,7 +260,7 @@ class gLTF
     	    int type_idx = str_data.IndexOf(':');
 	        if (type_idx == -1)
             {
-                List<uint8> bytes = new List<uint8>();
+                List<uint8> bytes = scope List<uint8>();
                 // Check if this is possible file and if so load it
                 let res = File.ReadAll(scope $"{gltf_dir}/{str_data}", bytes);
                 if (res case .Err)
@@ -289,7 +289,7 @@ class gLTF
     
     	        if (encoding == "base64")
                 {
-                    List<uint8> rdata = new List<uint8>();
+                    List<uint8> rdata = scope List<uint8>();
                     Base64.Decode(scope String(str_data.Substring(encoding_end_idx + 1)), rdata);
     	            return Uri.Byte(*(uint8[]*)rdata.Ptr);
     	        }
@@ -312,6 +312,7 @@ class gLTF
 	*/
 	private static Result<void, GLTFError> asset_parse(Json.JsonObjectData object, ref Asset res)
     {
+        res = Asset();
 	    if (TryGetObj(object, Types.ASSET_KEY, let lookingDict))
         {
             bool version_found = false;
@@ -374,6 +375,7 @@ class gLTF
 
             for (int idx = 0; idx < accessor_array.Count; idx++)
             {
+                res[idx] = Accessor();
                 if (accessor_array[idx] case .Object(let access))
                 {
         	        bool component_type_set = false;
@@ -479,9 +481,45 @@ class gLTF
                         res[idx].min = mines;
                     }
 
-                    if (access.TryGetValue("sparse", let sparse))
+                    if (TryGetObj(access, "sparse", let sparse))
                     {
-                         accessor_sparse_parse(sparse, ref res[idx]);
+                        if (sparse.TryGetValue("indices", let indices))
+                        {
+                            // Required
+                            sparse_indices_parse(indices, ref res[idx].indices);
+                        }
+
+                        if (sparse.TryGetValue( "values", let values))
+                        {
+                            // Required
+                            sparse_values_parse(values, ref res[idx].values);
+                        }
+
+                        if (sparse.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
+                        {
+                            res[idx].accessorExtensions = extensions;
+                        }
+
+                        if (sparse.TryGetValue(Types.EXTRAS_KEY, let extras))
+                        {
+                            res[idx].accessorExtras = extras;
+                        }
+
+                        if (res[idx].indices.Count == 0)
+                        {
+                            return .Err(GLTFError(
+                                .Missing_Required_Parameter, "accessor_sparse_parse", "indices"));
+                        }
+                        if (res[idx].values.Count == 0)
+                        {
+                            return .Err(GLTFError(
+                                .Missing_Required_Parameter, "accessor_sparse_parse", "values"));
+                        } 
+                    }
+                    else
+                    {
+                        return .Err(GLTFError(
+	                        .JSON_Missing_Section, "accessor_sparse_parse", "accessor_sparse"));
                     }
 
                     if (TryGetStr(access, "name", let name))
@@ -525,50 +563,6 @@ class gLTF
             .JSON_Missing_Section, "accessors_parse", Types.ACCESSORS_KEY));
 	}
 
-	private static Result<void, GLTFError> accessor_sparse_parse(Json.JsonElement object, ref Accessor res)
-    {
-        if (object case .Object(let obj))
-        {
-		    if (obj.TryGetValue("indices", let indices))
-            {
-	            // Required
-	            sparse_indices_parse(indices, ref res.indices);
-            }
-
-		    if (obj.TryGetValue( "values", let values))
-            {
-		        // Required
-		        sparse_values_parse(values, ref res.values);
-            }
-
-		    if (obj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
-            {
-		        res.accessorExtensions = extensions;
-            }
-
-		    if (obj.TryGetValue(Types.EXTRAS_KEY, let extras))
-            {
-                res.accessorExtras = extras;
-		    }
-
-		    if (res.indices.Count == 0)
-            {
-		        return .Err(GLTFError(
-                    .Missing_Required_Parameter, "accessor_sparse_parse", "indices"));
-		    }
-		    if (res.values.Count == 0)
-            {
-		        return .Err(GLTFError(
-                    .Missing_Required_Parameter, "accessor_sparse_parse", "values"));
-		    }
-
-		    return .Ok;
-		}
-
-        return .Err(GLTFError(
-            .JSON_Missing_Section, "accessor_sparse_parse", "accessor_sparse"));
-    }
-
 	private static Result<void, GLTFError> sparse_indices_parse(Json.JsonElement jsonArr, ref Accessor_Sparse_Indices[] res)
     {
         if (jsonArr case .Array(let accessorArray))
@@ -576,6 +570,7 @@ class gLTF
             res = new Accessor_Sparse_Indices[(int)accessorArray.Count];
             for (int i = 0; i < accessorArray.Count; i++)
             {
+                res[i] = Accessor_Sparse_Indices();
 	            bool buffer_view_set = false;
                 bool component_type_set = false;
 
@@ -641,6 +636,7 @@ class gLTF
             res = new Accessor_Sparse_Values[accessorArray.Count];
             for (int i = 0; i < accessorArray.Count; i++)
             {
+                res[i] = Accessor_Sparse_Values();
                 bool buffer_view_set = false;
 
                 if (accessorArray[i] case .Object(let value))
@@ -693,6 +689,7 @@ class gLTF
             res = new Animation[animations_array.Count];
 		    for (int i = 0; i < animations_array.Count; i++)
             {
+                res[i] = Animation();
 		        if (animations_array[i] case .Object(let ani))
                 {
 		            if (TryGetArr(ani, "channels", let parseChannels))
@@ -749,6 +746,7 @@ class gLTF
 
 		for (int i = 0; i < objArr.Count; i++)
         {
+            res[i] = Animation_Channel();
 		    bool sampler_set = false;
             bool target_set = false;
 
@@ -762,9 +760,54 @@ class gLTF
 
                 if (TryGetObj(chan, "target", let targetlookup))
                 {
-                    if (animation_channel_target_parse(targetlookup, ref res[i]) case .Err(let err))
+                    bool path_set = false;
+
+                    if (TryGetNum(targetlookup, "node", let node))
                     {
-                        return .Err(err);
+                        res[i].node = (int)node;
+                    }
+
+                    if (TryGetStr(targetlookup, "path", let path))
+                    {
+                        path_set = true;
+
+                        switch (scope String(path))
+                        {
+                            case "translation":
+                                res[i].path = .Translation;
+                                break;
+
+                            case "rotation":
+                                res[i].path = .Rotation;
+                                break;
+
+                            case "scale":
+                                res[i].path = .Scale;
+                                break;
+
+                            case "weights":
+                                res[i].path = .Weights;
+                                break;
+
+                            default:
+                                path_set = false;
+                                break;
+                        }
+                    }
+
+                    if (targetlookup.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
+                    {
+                        res[i].targetExtensions = extensions;
+                    }
+
+                    if (targetlookup.TryGetValue(Types.EXTRAS_KEY, let extras))
+                    {
+                        res[i].targetExtras = extras;
+                    }
+
+                    if (!path_set)
+                    {
+                        return .Err(GLTFError(.Missing_Required_Parameter, "animation_channel_target_parse", "path"));
                     }
                 }
 
@@ -794,67 +837,13 @@ class gLTF
         return .Ok;
     }
 
-	private static Result<void, GLTFError> animation_channel_target_parse(Json.JsonObjectData obj, ref Animation_Channel res)
-    {
-		bool path_set = false;
-
-		if (TryGetNum(obj, "node", let node))
-        {
-            res.node = (int)node;
-        }
-
-        if (TryGetStr(obj, "path", let path))
-        {
-            path_set = true;
-
-            switch (scope String(path))
-            {
-                case "translation":
-                    res.path = .Translation;
-                    break;
-
-                case "rotation":
-                    res.path = .Rotation;
-                    break;
-
-                case "scale":
-                    res.path = .Scale;
-                    break;
-
-                case "weights":
-                    res.path = .Weights;
-                    break;
-
-                default:
-                    path_set = false;
-                    break;
-            }
-        }
-
-        if (obj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
-        {
-            res.targetExtensions = extensions;
-        }
-
-        if (obj.TryGetValue(Types.EXTRAS_KEY, let extras))
-        {
-            res.targetExtras = extras;
-        }
-
-	    if (!path_set)
-        {
-	        return .Err(GLTFError(.Missing_Required_Parameter, "animation_channel_target_parse", "path"));
-	    }
-
-	    return .Ok;
-	}
-
 	private static Result<void, GLTFError> animation_samplers_parse(List<Json.JsonElement> objArr, ref Animation_Sampler[] res)
     {
         res = new Animation_Sampler[objArr.Count];
 
         for (int idx = 0; idx < objArr.Count; idx++)
         {
+            res[idx] = Animation_Sampler();
 		    bool input_set = false;
             bool output_set = false;
 
@@ -931,6 +920,7 @@ class gLTF
 
 		    for (int idx = 0; idx < buffers_array.Count; idx++)
             {
+                res[idx] = Buffer();
 		        bool byte_length_set = false;
 
                 if (buffers_array[idx] case .Object(let bufObj))
@@ -949,7 +939,7 @@ class gLTF
 
                     if (TryGetStr(bufObj, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(new String(uri)), gltf_dir);
+                        res[idx].uri = uri_parse(Uri.Str(scope String(uri)), gltf_dir);
                     }
 
 		            if (bufObj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -988,6 +978,7 @@ class gLTF
             res = new Buffer_View[views_array.Count];
 		    for (int idx = 0; idx < views_array.Count; idx++)
             {
+                res[idx] = Buffer_View();
                 bool buffer_set = false;
                 bool byte_length_set = false;
 
@@ -1066,6 +1057,7 @@ class gLTF
             res = new Camera[cameras_array.Count];
 		    for (int idx = 0; idx < cameras_array.Count; idx++)
             {
+                res[idx] = Camera();
 		        if (cameras_array[idx] case .Object(let camobj))
                 {
 		            if (TryGetStr(camobj, "name", let name))
@@ -1233,6 +1225,7 @@ class gLTF
             res = new Image[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Image();
 		        if (obj_array[idx] case .Object(let parseObject))
                 {    
 		            if (TryGetNum(parseObject, "bufferView", let bufferView))
@@ -1263,7 +1256,7 @@ class gLTF
 
                     if (TryGetStr(parseObject, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(new String(name)), gltf_dir);
+                        res[idx].uri = uri_parse(Uri.Str(scope String(name)), gltf_dir);
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1292,6 +1285,7 @@ class gLTF
             res = new Material[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Material();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            res[idx].alpha_cutoff = 0.5f;
@@ -1428,6 +1422,7 @@ class gLTF
 
     private static Result<void, GLTFError> texture_info_parse(Json.JsonObjectData parseObject, TextureType textureType, ref Texture_Info res)
     {
+        res = Texture_Info();
         res.textureType = textureType;
 
         if (TryGetNum(parseObject, "index", let index))
@@ -1481,8 +1476,7 @@ class gLTF
             res = new Mesh[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res[idx].primitives = new Mesh_Primitive[0];
-
+                res[idx] = Mesh();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetStr(parseObject, "name", let name))
@@ -1540,20 +1534,18 @@ class gLTF
 
 		for (int idx = 0; idx < array.Count; idx++)
         {
+            res[idx] = Mesh_Primitive();
 		    res[idx].mode = .Triangles;
-            res[idx].attributes = new Dictionary<int, int>();
+            res[idx].attributes = new Dictionary<StringView, int>();
 
 		    if (array[idx] case .Object(let parseObject))
             {
-                if (TryGetArr(parseObject, "attributes", let attributes))
+                if (TryGetObj(parseObject, "attributes", let attributes))
                 {
 	                // Required
-	                for (int j = 0; j < attributes.Count; j++)
+	                for(let attr in attributes)
                     {
-                        if (attributes[j] case .Number(let attrs))
-                        {
-		                    res[idx].attributes.Add(j, (int)attrs);
-                        }
+                        res[idx].attributes.Add(attr.key, (int)attr.value.AsNumber());
 		            }
                 }
 
@@ -1612,6 +1604,7 @@ class gLTF
             res = new Node[obj_array.Count];
 		    for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Node();
                 res[idx].mat = .(1,);
                 res[idx].rotation = .(1, 1, 1, 1);
                 res[idx].scale = .(1, 1, 1);
@@ -1737,6 +1730,7 @@ class gLTF
             res = new Sampler[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Sampler();
                 res[idx].wrapS = .Repeat;
 	            res[idx].wrapT = .Repeat;
 
@@ -1795,6 +1789,7 @@ class gLTF
             res = new Scene[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Scene();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
                     if (TryGetArr(parseObject, "nodes", let nodes))
@@ -1841,6 +1836,7 @@ class gLTF
             res = new Skin[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Skin();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetNum(parseObject, "inverseBindMatrices", let inverseBindMatrices))
@@ -1903,6 +1899,7 @@ class gLTF
             res = new Texture[obj_array.Count];
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
+                res[idx] = Texture();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetNum(parseObject, "sampler", let sampler))
