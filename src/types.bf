@@ -255,7 +255,7 @@ struct Animation : IDisposable
 
         if (samplers != null)
         {
-            delete channels;
+            delete v;
         }
     }
 }
