@@ -167,10 +167,17 @@ struct Accessor : IDisposable
     public String name;
     public Extensions extensions;
     public Extras extras;
-    public Accessor_Sparse_Indices[] indices; // Required
-    public Accessor_Sparse_Values[] values; // Required
+    public List<Accessor_Sparse_Indices> indices; // Required
+    public List<Accessor_Sparse_Values> values; // Required
     public Extensions accessorExtensions;
     public Extras accessorExtras;
+
+    public this()
+    {
+        this = default;
+        indices = new .();
+        values = new .();
+    }
 
     public void Dispose()
     {
@@ -221,11 +228,18 @@ struct Accessor_Sparse_Values
 
 struct Animation : IDisposable
 {
-	public Animation_Channel[] channels;
-	public Animation_Sampler[] samplers;
+	public List<Animation_Channel> channels;
+	public List<Animation_Sampler> samplers;
 	public String name;
 	public Extensions extensions;
 	public Extras extras;
+
+    public this()
+    {
+        this = default;
+        channels = new .();
+        samplers = new .();
+    }
 
     public void Dispose()
     {
@@ -443,11 +457,18 @@ enum Material_Alpha_Mode
 */
 struct Mesh : IDisposable
 {
-    public Mesh_Primitive[] primitives;
-    public float[] weights;
+    public List<Mesh_Primitive> primitives;
+    public List<float> weights;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        primitives = new .();
+        weights = new .();
+    }
 
     public void Dispose()
     {
@@ -458,7 +479,7 @@ struct Mesh : IDisposable
 
         if (primitives != null)
         {
-            delete primitives;
+            DeleteContainerAndDisposeItems!(primitives);
         }
 
         if (weights != null)
@@ -474,26 +495,27 @@ struct Mesh_Primitive : IDisposable
     public Mesh_Primitive_Mode mode; // Default Triangles(4)
     public int? indices;
     public int? material;
-    public Mesh_Target[] targets;
+    public List<Mesh_Target> targets;
     public Extensions extensions;
     public Extras extras;
 
     public this()
     {
         this = default;
-        targets = new Mesh_Target[]();
+        targets = new .();
     }
 
     public void Dispose()
     {
         if (attributes != null)
         {
+            attributes.Clear();
             delete attributes;
         }
 
         if (targets != null)
         {
-            delete targets;
+            DeleteContainerAndDisposeItems!(targets);
         }
     }
 }
@@ -552,11 +574,18 @@ struct Node : IDisposable
     public int? camera;
     public int? mesh;
     public int? skin;
-    public int[] children;
+    public List<int> children;
     public String name;
-    public float[] weights;
+    public List<float> weights;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        children = new .();
+        weights = new .();
+    }
 
     public void Dispose()
     {
@@ -627,10 +656,16 @@ enum Minification_Filter
 */
 struct Scene : IDisposable
 {
-    public int[] nodes;
+    public List<int> nodes;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        nodes = new .();
+    }
 
     public void Dispose()
     {
@@ -651,12 +686,18 @@ struct Scene : IDisposable
 */
 struct Skin : IDisposable
 {
-    public int[] joints;// Required
+    public List<int> joints;// Required
     public int? inverse_bind_matrices;
     public int? skeleton;
     public String name;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        joints = new .();
+    }
 
     public void Dispose()
     {
