@@ -38,8 +38,7 @@ class gLTF
 
 	    Options options = Options()
         {
-	        delete_content = true,
-	        gltf_dir       = gltf_dir,
+	        gltf_dir = gltf_dir
 	    };
 
         String fext = scope String();
@@ -62,12 +61,6 @@ class gLTF
 
 	public static Result<void, GLTFError> parse(List<uint8> file_content, Options opt, GLTFData gltfdata)
     {
-        // Seems always be true? Why delete content before use? 
-	    if (opt.delete_content)
-        {
-	        //file_content.Clear();
-	    }
-
 	    if (file_content.Count < GLB_HEADER_SIZE)
         {
 	        return .Err(GLTFError(.Data_Too_Short, "parse"));
@@ -140,12 +133,17 @@ class gLTF
                 errorList.Add(err);
             }
        
-            if (buffers_parse(keyObj, opt.gltf_dir, ref gltfdata.buffers) case .Err(err))
+            if (buffers_parse(keyObj, opt.gltf_dir, opt.keepBinary, ref gltfdata.buffers) case .Err(err))
             {
                 errorList.Add(err);
             }
        
             if (buffer_views_parse(keyObj, ref gltfdata.buffer_views) case .Err(err))
+            {
+                errorList.Add(err);
+            }
+
+            if (accessorsDataParse(keyObj, opt.gltf_dir, gltfdata, ref gltfdata.accessors) case .Err(err))
             {
                 errorList.Add(err);
             }
@@ -244,9 +242,10 @@ class gLTF
     {
 	    if (TryGetArr(object, name, let arr))
         {
+            extensions.Resize(arr.Count);
             for (int i = 0; i < arr.Count; i++)
             {
-                extensions.Add(new String(arr[i].AsString()));
+                extensions[i] = new String(arr[i].AsString());
             }
         }
 	}
@@ -258,7 +257,7 @@ class gLTF
     	    int type_idx = str_data.IndexOf(':');
 	        if (type_idx == -1)
             {
-                List<uint8> bytes = scope List<uint8>();
+                List<uint8> bytes = new List<uint8>();
                 // Check if this is possible file and if so load it
                 let res = File.ReadAll(scope $"{gltf_dir}/{str_data}", bytes);
                 if (res case .Err)
@@ -287,7 +286,7 @@ class gLTF
     
     	        if (encoding == "base64")
                 {
-                    List<uint8> rdata = scope List<uint8>();
+                    List<uint8> rdata = new List<uint8>();
                     Base64.Decode(scope String(str_data.Substring(encoding_end_idx + 1)), rdata);
     	            return Uri.Byte(rdata);
     	        }
@@ -369,9 +368,10 @@ class gLTF
     {
 	    if (TryGetArr(object, Types.ACCESSORS_KEY, let accessor_array))
         {
+            res.Resize(accessor_array.Count);
             for (int idx = 0; idx < accessor_array.Count; idx++)
             {
-                res.Add(Accessor());
+                res[idx] = new Accessor();
                 if (accessor_array[idx] case .Object(let access))
                 {
         	        bool component_type_set = false;
@@ -482,7 +482,7 @@ class gLTF
                         if (sparse.TryGetValue("indices", let indices))
                         {
                             // Required
-                            sparse_indices_parse(indices, ref res[idx].indices);
+                            sparse_indices_parse(indices, res[idx].indices);
                         }
 
                         if (sparse.TryGetValue( "values", let values))
@@ -511,11 +511,6 @@ class gLTF
                             return .Err(GLTFError(
                                 .Missing_Required_Parameter, "accessor_sparse_parse", "values"));
                         } 
-                    }
-                    else
-                    {
-                        return .Err(GLTFError(
-	                        .JSON_Missing_Section, "accessor_sparse_parse", "accessor_sparse"));
                     }
 
                     if (TryGetStr(access, "name", let name))
@@ -559,13 +554,14 @@ class gLTF
             .JSON_Missing_Section, "accessors_parse", Types.ACCESSORS_KEY));
 	}
 
-	private static Result<void, GLTFError> sparse_indices_parse(Json.JsonElement jsonArr, ref List<Accessor_Sparse_Indices> res)
+	private static Result<void, GLTFError> sparse_indices_parse(Json.JsonElement jsonArr, List<Accessor_Sparse_Indices> res)
     {
         if (jsonArr case .Array(let accessorArray))
         {
+            res.Resize(accessorArray.Count);
             for (int i = 0; i < accessorArray.Count; i++)
             {
-                res.Add(Accessor_Sparse_Indices());
+                res[i] = Accessor_Sparse_Indices();
 	            bool buffer_view_set = false;
                 bool component_type_set = false;
 
@@ -628,9 +624,11 @@ class gLTF
     {
         if (jsonArr case .Array(let accessorArray))
         {
+            res.Resize(accessorArray.Count);
             for (int i = 0; i < accessorArray.Count; i++)
             {
-                res.Add(Accessor_Sparse_Values());
+
+                res[i] = Accessor_Sparse_Values();
                 bool buffer_view_set = false;
 
                 if (accessorArray[i] case .Object(let value))
@@ -673,6 +671,103 @@ class gLTF
         return .Ok;
     }
 
+    private static Result<void, GLTFError> accessorsDataParse(
+        Json.JsonObjectData object, String gltf_dir, GLTFData gltfdata, ref List<Accessor> res)
+    {
+        Dictionary<int, Span<uint8>> bufferDict = new Dictionary<int, Span<uint8>>();
+
+        for (int idx = 0; idx < res.Count; idx++)
+        {
+            if (res[idx].buffer_view == null)
+            {
+                return .Err(GLTFError(.Missing_Required_Parameter, "accessorsDataParse", "buf_iter_make: selected accessor doesn't have buffer_view"));
+            }
+    
+            Buffer_View buffer_view = gltfdata.buffer_views[(int)res[idx].buffer_view];
+    
+            if (res[idx].indices.Count > 0 || res[idx].values.Count > 0)
+            {
+                // TODO: Sparse
+            }
+        
+            if (buffer_view.byte_stride != null)
+            {
+               // TODO: Stride
+            }
+    
+            int start_byte = res[idx].byte_offset + buffer_view.byte_offset;
+            int byteCount = start_byte + res[idx].count;
+
+            Span<uint8> buffer = Span<uint8>();
+            if (bufferDict.ContainsKey(buffer_view.buffer))
+            {
+                buffer = bufferDict.GetValue(buffer_view.buffer);
+            }
+            else
+            {
+                Uri uri = gltfdata.buffers[buffer_view.buffer].uri;
+    
+                if (uri case .Str(let str))
+                {
+                    uri = uri_parse(uri, gltf_dir);
+                }
+        
+                if (uri case .Byte(ref buffer))
+                {
+                    bufferDict.Add(buffer_view.buffer, buffer);
+                }
+            }
+
+            switch(res[idx].component_type)
+            {
+                case .Unsigned_Byte:
+                    List<uint8> accessorList = new .();
+                    GetAccessorDataFromBuffer<uint8>(buffer, start_byte, byteCount, sizeof(uint8), accessorList);
+                    res[idx].accessorData = .Unsigned_Byte(accessorList);
+                    break;
+                case .Byte:
+                    List<int8> accessorList = new .();
+                    GetAccessorDataFromBuffer<int8>(buffer, start_byte, byteCount, sizeof(int8), accessorList);
+                    res[idx].accessorData = .Byte(accessorList);
+                    break;
+                case .Short:
+                    List<int16> accessorList = new .();
+                    GetAccessorDataFromBuffer<int16>(buffer, start_byte, byteCount, sizeof(int16), accessorList);
+                    res[idx].accessorData = .Short(accessorList);
+                    break;
+                case .Unsigned_Short:
+                    List<uint16> accessorList = new .();
+                    GetAccessorDataFromBuffer<uint16>(buffer, start_byte, byteCount, sizeof(uint16), accessorList);
+                    res[idx].accessorData = .Unsigned_Short(accessorList);
+                    break;
+                case .Unsigned_Int:
+                    List<uint32> accessorList = new .();
+                    GetAccessorDataFromBuffer<uint32>(buffer, start_byte, byteCount, sizeof(uint32), accessorList);
+                    res[idx].accessorData = .Unsigned_Int(accessorList);
+                    break;
+                case .Float:
+                    List<float> accessorList = new .();
+                    GetAccessorDataFromBuffer<float>(buffer, start_byte, byteCount, sizeof(float), accessorList);
+                    res[idx].accessorData = .Float(accessorList);
+                    break;
+            	default: break;
+            }
+        }
+
+        return .Ok;
+    }
+
+    private static void GetAccessorDataFromBuffer<T>(Span<uint8> buffer, int startPos, int endPos, int byteSize, List<T> accessorData)
+    {
+        for (int sliceidx = startPos;
+            sliceidx < endPos || sliceidx < buffer.Length;
+            sliceidx += byteSize)
+        {
+            Span<uint8> bytespan = buffer.Slice(sliceidx, byteSize);
+            accessorData.Add(*(T*)bytespan.Ptr);
+        }
+    }
+
 	/*
 	    Animations parsing
 	*/
@@ -680,9 +775,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.ANIMATIONS_KEY, let animations_array))
         {
+            res.Resize(animations_array.Count);
 		    for (int i = 0; i < animations_array.Count; i++)
             {
-                res.Add(Animation());
+                res[i] = Animation();
 		        if (animations_array[i] case .Object(let ani))
                 {
 		            if (TryGetArr(ani, "channels", let parseChannels))
@@ -735,9 +831,10 @@ class gLTF
 	
 	private static Result<void, GLTFError> animation_channels_parse(List<Json.JsonElement> objArr, ref List<Animation_Channel> res)
     {
+        res.Resize(objArr.Count);
 		for (int i = 0; i < objArr.Count; i++)
         {
-            res.Add(Animation_Channel());
+            res[i] = Animation_Channel();
 		    bool sampler_set = false;
             bool target_set = false;
 
@@ -830,9 +927,10 @@ class gLTF
 
 	private static Result<void, GLTFError> animation_samplers_parse(List<Json.JsonElement> objArr, ref List<Animation_Sampler> res)
     {
+        res.Resize(objArr.Count);
         for (int idx = 0; idx < objArr.Count; idx++)
         {
-            res.Add(Animation_Sampler());
+            res[idx] = Animation_Sampler();
 		    bool input_set = false;
             bool output_set = false;
 
@@ -901,13 +999,14 @@ class gLTF
         return .Ok;
     }
 
-	private static Result<void, GLTFError> buffers_parse(Json.JsonObjectData obj, String gltf_dir, ref List<Buffer> res)
+	private static Result<void, GLTFError> buffers_parse(Json.JsonObjectData obj, String gltf_dir, bool keepBinary, ref List<Buffer> res)
     {
         if (TryGetArr(obj, Types.BUFFERS_KEY, let buffers_array))
 		{
+            res.Resize(buffers_array.Count);
 		    for (int idx = 0; idx < buffers_array.Count; idx++)
             {
-                res.Add(Buffer());
+                res[idx] = Buffer();
 		        bool byte_length_set = false;
 
                 if (buffers_array[idx] case .Object(let bufObj))
@@ -926,7 +1025,14 @@ class gLTF
 
                     if (TryGetStr(bufObj, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(scope String(uri)), gltf_dir);
+                        if (keepBinary)
+                        {
+                            res[idx].uri = uri_parse(Uri.Str(new String(uri)), gltf_dir);
+                        }
+                        else
+                        {
+                            res[idx].uri = .Str(new String(uri));
+                        }
                     }
 
 		            if (bufObj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -962,9 +1068,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.BUFFER_VIEWS_KEY, let views_array))
         {
+            res.Resize(views_array.Count);
 		    for (int idx = 0; idx < views_array.Count; idx++)
             {
-                res.Add(Buffer_View());
+                res[idx] = Buffer_View();
                 bool buffer_set = false;
                 bool byte_length_set = false;
 
@@ -1040,9 +1147,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.CAMERAS_KEY, let cameras_array))
         {
+            res.Resize(cameras_array.Count);
 		    for (int idx = 0; idx < cameras_array.Count; idx++)
             {
-                res.Add(Camera());
+                res[idx] = Camera();
 		        if (cameras_array[idx] case .Object(let camobj))
                 {
 		            if (TryGetStr(camobj, "name", let name))
@@ -1207,9 +1315,10 @@ class gLTF
     {
 	    if (TryGetArr(object, Types.IMAGES_KEY, let obj_array))
         {
+            res.Resize(obj_array.Count);
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Image());
+                res[idx] = Image();
 		        if (obj_array[idx] case .Object(let parseObject))
                 {    
 		            if (TryGetNum(parseObject, "bufferView", let bufferView))
@@ -1266,9 +1375,10 @@ class gLTF
     {
 	    if (TryGetArr(object, Types.MATERIALS_KEY, let obj_array))
         {
-		    for (int idx = 0; idx < obj_array.Count; idx++)
+		    res.Resize(obj_array.Count);
+            for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Material());
+                res[idx] = Material();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            res[idx].alpha_cutoff = 0.5f;
@@ -1456,9 +1566,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.MESHES_KEY, let obj_array))
         {
-		    for (int idx = 0; idx < obj_array.Count; idx++)
+		    res.Resize(obj_array.Count);
+            for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Mesh());
+                res[idx] = Mesh();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetStr(parseObject, "name", let name))
@@ -1477,11 +1588,12 @@ class gLTF
 
 		            if (TryGetArr(parseObject, "weights", let weights))
                     {
+                        res[idx].weights.Resize(weights.Count);
 		                for (int j = 0; j < weights.Count; j++)
                         {
                             if (weights[j] case .Number(double w))
                             {
-		                        res[idx].weights.Add((float)w);
+		                        res[idx].weights[j] = (float)w;
                             }
 		                }
                     }
@@ -1511,9 +1623,10 @@ class gLTF
 
 	private static Result<void, GLTFError> mesh_primitives_parse(List<Json.JsonElement> array, ref List<Mesh_Primitive> res)
     {
-		for (int idx = 0; idx < array.Count; idx++)
+		res.Resize(array.Count);
+        for (int idx = 0; idx < array.Count; idx++)
         {
-            res.Add(Mesh_Primitive());
+            res[idx] = Mesh_Primitive();
 		    res[idx].mode = .Triangles;
             res[idx].attributes = new Dictionary<StringView, int>();
 
@@ -1580,9 +1693,10 @@ class gLTF
     {
 	    if (TryGetArr(object, Types.NODES_KEY, let obj_array))
         {
-		    for (int idx = 0; idx < obj_array.Count; idx++)
+		    res.Resize(obj_array.Count);
+            for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Node());
+                res[idx] = Node();
                 res[idx].mat = .(1,);
                 res[idx].rotation = .(1, 1, 1, 1);
                 res[idx].scale = .(1, 1, 1);
@@ -1596,11 +1710,12 @@ class gLTF
 
 		            if (TryGetArr(parseObject, "children", let children))
                     {
+                        res[idx].children.Resize(children.Count);
 		                for (int j = 0; j < children.Count; j++)
                         {
                             if (children[j] case .Number(double c))
                             {
-                                res[idx].children.Add((int)c);
+                                res[idx].children[j] = (int)c;
                             }
 		                }
                     }
@@ -1670,12 +1785,13 @@ class gLTF
 
                     if (TryGetArr(parseObject, "weights", let weights))
                     {
+                        res[idx].weights.Resize(weights.Count);
                         for (int j = 0; j < weights.Count; j++)
                         {
                             // Default [0, 0, 0, 1]
                             if (weights[j] case .Number(double w))
                             {
-                                res[idx].weights.Add((float)w);
+                                res[idx].weights[j] = (float)w;
                             }
                         }
                     }
@@ -1703,9 +1819,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.SAMPLERS_KEY, let obj_array))
         {
+            res.Resize(obj_array.Count);
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Sampler());
+                res[idx] = Sampler();
                 res[idx].wrapS = .Repeat;
 	            res[idx].wrapT = .Repeat;
 
@@ -1761,19 +1878,21 @@ class gLTF
     {
         if (TryGetArr(object, Types.SCENES_KEY, let obj_array))
         {
+            res.Resize(obj_array.Count);
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Scene());
+                res[idx] = Scene();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
                     if (TryGetArr(parseObject, "nodes", let nodes))
                     {
+                        res[idx].nodes.Resize(nodes.Count);
                         for (int j = 0; j < nodes.Count; j++)
                         {
                             // Default [0, 0, 0, 1]
                             if (nodes[j] case .Number(double n))
                             {
-                                res[idx].nodes.Add((int)n);
+                                res[idx].nodes[j] = (int)n;
                             }
                         }
                     }
@@ -1806,9 +1925,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.SKINS_KEY, let obj_array))
         {
+            res.Resize(obj_array.Count);
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Skin());
+                res[idx] = Skin();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetNum(parseObject, "inverseBindMatrices", let inverseBindMatrices))
@@ -1818,12 +1938,13 @@ class gLTF
 
                     if (TryGetArr(parseObject, "joints", let joints))
                     {
+                        res[idx].joints.Resize(joints.Count);
                         for (int j = 0; j < joints.Count; j++)
                         {
                             // Default [0, 0, 0, 1]
                             if (joints[j] case .Number(double joint))
                             {
-                                res[idx].joints.Add((int)joint);
+                                res[idx].joints[j] = (int)joint;
                             }
                         }
                     }
@@ -1867,9 +1988,10 @@ class gLTF
     {
         if (TryGetArr(object, Types.TEXTURES_KEY, let obj_array))
         {
+            res.Resize(obj_array.Count);
             for (int idx = 0; idx < obj_array.Count; idx++)
             {
-                res.Add(Texture());
+                res[idx] = Texture();
                 if (obj_array[idx] case .Object(let parseObject))
                 {
 		            if (TryGetNum(parseObject, "sampler", let sampler))

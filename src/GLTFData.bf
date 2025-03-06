@@ -49,7 +49,7 @@ class GLTFData
     {
         asset.Dispose();
 
-        DeleteContainerAndDisposeItems!(accessors);
+        DeleteContainerAndItems!(accessors);
         DeleteContainerAndDisposeItems!(animations);
         DeleteContainerAndDisposeItems!(buffers);
         DeleteContainerAndDisposeItems!(buffer_views);
@@ -63,8 +63,6 @@ class GLTFData
         DeleteContainerAndDisposeItems!(skins);
         DeleteContainerAndDisposeItems!(textures);
 
-        extensions_used.Clear();
-        extensions_required.Clear();
         delete extensions_used;
         delete extensions_required;
     }

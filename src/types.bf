@@ -6,7 +6,7 @@ namespace gLTF;
 struct Options : IDisposable
 {
 	public bool is_glb;
-	public bool delete_content;
+    public bool keepBinary;
 	public String gltf_dir;
 
     public void Dispose()
@@ -150,11 +150,12 @@ enum Component_Type
 
 enum Uri
 {
+    case Null;
 	case Str(String str);
 	case Byte(Span<uint8> byte);
 }
 
-struct Accessor : IDisposable
+class Accessor
 {
 	public int byte_offset;
     public Component_Type component_type; // Required
@@ -171,15 +172,15 @@ struct Accessor : IDisposable
     public List<Accessor_Sparse_Values> values; // Required
     public Extensions accessorExtensions;
     public Extras accessorExtras;
+    public AccessorData accessorData;
 
     public this()
     {
-        this = default;
         indices = new .();
         values = new .();
     }
 
-    public void Dispose()
+    public ~this()
     {
         if (indices != null)
         {
@@ -196,6 +197,17 @@ struct Accessor : IDisposable
             delete name;
         }
     }
+}
+
+enum AccessorData
+{
+    case Null;
+	case Byte(List<int8> val);
+	case Unsigned_Byte(List<uint8> val);
+	case Short(List<int16> val);
+	case Unsigned_Short(List<uint16> val);
+	case Unsigned_Int(List<uint32> val);
+	case Float(List<float> val);
 }
 
 enum Accessor_Type
@@ -255,7 +267,7 @@ struct Animation : IDisposable
 
         if (samplers != null)
         {
-            delete v;
+            delete samplers;
         }
     }
 }
@@ -509,7 +521,6 @@ struct Mesh_Primitive : IDisposable
     {
         if (attributes != null)
         {
-            attributes.Clear();
             delete attributes;
         }
 
