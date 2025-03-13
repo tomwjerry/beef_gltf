@@ -148,11 +148,20 @@ enum Component_Type
 	Float
 }
 
-enum Uri
+interface IAccessorData
 {
-    case Null;
-	case Str(String str);
-	case Byte(Span<uint8> byte);
+    public void getList<T>(List<T> mylist);
+}
+
+class AccessorData<T> : List<T>, IAccessorData
+{
+    public void getList<T2>(List<T2> mylist) where T2 : operator explicit T
+    {
+        for (let ac in this)
+        {
+            mylist.Add((.)ac);
+        }
+    }
 }
 
 class Accessor
@@ -172,7 +181,7 @@ class Accessor
     public List<Accessor_Sparse_Values> values; // Required
     public Extensions accessorExtensions;
     public Extras accessorExtras;
-    public AccessorData accessorData;
+    public IAccessorData accessorData;
 
     public this()
     {
@@ -191,23 +200,30 @@ class Accessor
         {
             delete values;
         }
+
+        if (accessorData != null)
+        {
+            delete accessorData;
+        }
  
         if (name != null)
         {
             delete name;
         }
     }
-}
 
-enum AccessorData
-{
-    case Null;
-	case Byte(List<int8> val);
-	case Unsigned_Byte(List<uint8> val);
-	case Short(List<int16> val);
-	case Unsigned_Short(List<uint16> val);
-	case Unsigned_Int(List<uint32> val);
-	case Float(List<float> val);
+    public bool makeAccessorInstance<T>(out AccessorData<T> newAccessorData)
+    {
+        if (accessorData != null)
+        {
+            delete accessorData;
+        }
+
+        newAccessorData = new AccessorData<T>();
+        accessorData = newAccessorData;
+
+        return true;
+    }
 }
 
 enum Accessor_Type
@@ -311,9 +327,18 @@ struct Buffer : IDisposable
 {
     public int byte_length;
     public String name;
-    public Uri uri;
+    public String uristr;
+	public List<uint8> bytes;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        name = new String();
+        uristr = new String();
+        bytes = new List<uint8>();
+    }
 
     public void Dispose()
     {
@@ -321,6 +346,16 @@ struct Buffer : IDisposable
         {
             delete name;
         }
+
+        if (uristr != null)
+        {
+            delete uristr;
+        }
+
+        if (bytes != null)
+        {
+            delete bytes;
+        }    
     }
 }
 
@@ -355,10 +390,25 @@ enum Buffer_Type_Hint
 */
 struct Camera : IDisposable
 {
-    public Camera_Type type;
+    public String type;
     public String name;
+    public float yfov;
+    public float znear;
+    public float? aspect_ratio;
+    public float? zfar;
+    public float? xmag; 
+    public float? ymag;
     public Extensions extensions;
     public Extras extras;
+    public Extensions typeExtensions;
+    public Extras typeExtras;
+
+    public this()
+    {
+        this = default;
+        type = new String();
+        name = new String();
+    }
 
     public void Dispose()
     {
@@ -369,50 +419,37 @@ struct Camera : IDisposable
     }
 }
 
-enum Camera_Type
-{
-    case Null;
-	case Perspective(Perspective_Camera camera);
-    case Orthographic(Orthographic_Camera camera);
-}
-
-struct Perspective_Camera
-{
-    public float yfov;
-    public float znear;
-    public float? aspect_ratio;
-    public float? zfar;
-    public Extensions extensions;
-    public Extras extras;
-}
-
-struct Orthographic_Camera
-{
-    public float xmag; 
-    public float ymag;
-    public float zfar; 
-    public float znear;
-    public Extensions extensions;
-    public Extras extras;
-}
-
 /*
     Image related data structures
 */
 struct Image : IDisposable
 {
     public String name;
-    public Uri uri;
+    public String uristr;
+    public List<uint8> bytes;
     public Image_Type type;
     public int? buffer_view;
     public Extensions extensions;
     public Extras extras;
+
+    public this()
+    {
+        this = default;
+        name = new String();
+        uristr = new String();
+        bytes = new List<uint8>();
+    }
 
     public void Dispose()
     {
         if (name != null)
         {
             delete name;
+        }
+
+        if (bytes != null)
+        {
+            delete bytes;
         }
     }
 }

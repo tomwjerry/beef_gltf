@@ -98,10 +98,10 @@ class gLTF
 
         Encoding endcoding = Encoding.ASCII;
         String jsonStr = new String();
-        if (endcoding.DecodeToUTF8(json_data, jsonStr) case .Err(let err))
+        if (endcoding.DecodeToUTF8(json_data, jsonStr) case .Err(let jerr))
         {
             String errStr = new String();
-            err.ToString(errStr);
+            jerr.ToString(errStr);
             return .Err(GLTFError(.Cant_Read_File, "parse", errStr));
         }
 	    Json.JsonTree jsonTree = new Json.JsonTree();
@@ -227,8 +227,7 @@ class gLTF
 	        GLB_Chunk_Header chunk_header = *(GLB_Chunk_Header*)file_content.GetRange(content_index, content_index + GLB_CHUNK_HEADER_SIZE).Ptr;
 	        content_index += GLB_CHUNK_HEADER_SIZE;
 
-            gltfdata.buffers[buf_idx].uri =
-                .Byte(file_content.GetRange(content_index));
+            file_content.CopyTo(gltfdata.buffers[buf_idx].bytes, content_index);
 	        content_index += uint32(chunk_header.length);
 	    }
 
@@ -250,50 +249,38 @@ class gLTF
         }
 	}
 
-	private static Uri uri_parse(Uri uri, String gltf_dir)
+	private static void uri_parse(List<uint8> bytes, String uristr, String gltf_dir)
     {
-	    if (uri case .Str(String str_data))
+	    int type_idx = uristr.IndexOf(':');
+        if (type_idx == -1)
         {
-    	    int type_idx = str_data.IndexOf(':');
-	        if (type_idx == -1)
-            {
-                List<uint8> bytes = new List<uint8>();
-                // Check if this is possible file and if so load it
-                let res = File.ReadAll(scope $"{gltf_dir}/{str_data}", bytes);
-                if (res case .Err)
-                {
-                    return uri;
-                }
-    	        
-	            return Uri.Byte(bytes);
-	        }
-
-    	    String type = scope String(str_data.Substring(type_idx));
+            // Check if this is possible file and if so load it
+            File.ReadAll(scope $"{gltf_dir}/{uristr}", bytes);
+        }
+        else
+        {
+    	    String type = scope String(uristr.Substring(type_idx));
     	    if (type == "data")
             {
-    	        int encoding_start_idx = str_data.IndexOf(';') + 1;
+    	        int encoding_start_idx = uristr.IndexOf(';') + 1;
     	        if (encoding_start_idx == 0)
                 {
-        	        return uri;
+        	        return;
         	    }
-    	        int encoding_end_idx = str_data.IndexOf(',');
+    	        int encoding_end_idx = uristr.IndexOf(',');
     	        if (encoding_end_idx == -1)
                 {
-    	            return uri;
+    	            return;
     	        }
         
-    	        String encoding = scope String(str_data.Substring(encoding_start_idx, encoding_end_idx));
+    	        String encoding = scope String(uristr.Substring(encoding_start_idx, encoding_end_idx));
     
     	        if (encoding == "base64")
                 {
-                    List<uint8> rdata = new List<uint8>();
-                    Base64.Decode(scope String(str_data.Substring(encoding_end_idx + 1)), rdata);
-    	            return Uri.Byte(rdata);
+                    Base64.Decode(scope String(uristr.Substring(encoding_end_idx + 1)), bytes);
     	        }
             }
         }
-
-	    return uri;
 	}
 
 	private static void warning_unexpected_data(String proc_name, String key, Json.JsonElement val, int idx = 0)
@@ -633,7 +620,7 @@ class gLTF
 
                 if (accessorArray[i] case .Object(let value))
                 {
-                    if (TryGetNum(value, "bufferView", let  bufferView))
+                    if (TryGetNum(value, "bufferView", let bufferView))
                     {
                         // Required
                         res[i].buffer_view = (int)bufferView;
@@ -674,7 +661,7 @@ class gLTF
     private static Result<void, GLTFError> accessorsDataParse(
         Json.JsonObjectData object, String gltf_dir, GLTFData gltfdata, ref List<Accessor> res)
     {
-        Dictionary<int, Span<uint8>> bufferDict = new Dictionary<int, Span<uint8>>();
+        Dictionary<int, List<uint8>> bufferDict = scope Dictionary<int, List<uint8>>();
 
         for (int idx = 0; idx < res.Count; idx++)
         {
@@ -698,22 +685,20 @@ class gLTF
             int start_byte = res[idx].byte_offset + buffer_view.byte_offset;
             int byteCount = start_byte + res[idx].count;
 
-            Span<uint8> buffer = Span<uint8>();
+            List<uint8> buffer = scope List<uint8>();
             if (bufferDict.ContainsKey(buffer_view.buffer))
             {
                 buffer = bufferDict.GetValue(buffer_view.buffer);
             }
             else
             {
-                Uri uri = gltfdata.buffers[buffer_view.buffer].uri;
-    
-                if (uri case .Str(let str))
+                if (gltfdata.buffers[buffer_view.buffer].bytes.IsEmpty)
                 {
-                    uri = uri_parse(uri, gltf_dir);
+                    uri_parse(buffer, gltfdata.buffers[buffer_view.buffer].uristr, gltf_dir);
                 }
-        
-                if (uri case .Byte(ref buffer))
+                else
                 {
+                    buffer = gltfdata.buffers[buffer_view.buffer].bytes;
                     bufferDict.Add(buffer_view.buffer, buffer);
                 }
             }
@@ -721,34 +706,40 @@ class gLTF
             switch(res[idx].component_type)
             {
                 case .Unsigned_Byte:
-                    List<uint8> accessorList = new .();
-                    GetAccessorDataFromBuffer<uint8>(buffer, start_byte, byteCount, sizeof(uint8), accessorList);
-                    res[idx].accessorData = .Unsigned_Byte(accessorList);
+                    if (res[idx].makeAccessorInstance<uint8>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<uint8>(buffer, start_byte, byteCount, sizeof(uint8), accessorData);
+                    }
                     break;
                 case .Byte:
-                    List<int8> accessorList = new .();
-                    GetAccessorDataFromBuffer<int8>(buffer, start_byte, byteCount, sizeof(int8), accessorList);
-                    res[idx].accessorData = .Byte(accessorList);
+                    if (res[idx].makeAccessorInstance<int8>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<int8>(buffer, start_byte, byteCount, sizeof(int8), accessorData);
+                    }
                     break;
                 case .Short:
-                    List<int16> accessorList = new .();
-                    GetAccessorDataFromBuffer<int16>(buffer, start_byte, byteCount, sizeof(int16), accessorList);
-                    res[idx].accessorData = .Short(accessorList);
+                    if (res[idx].makeAccessorInstance<int16>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<int16>(buffer, start_byte, byteCount, sizeof(int16), accessorData);
+                    }
                     break;
                 case .Unsigned_Short:
-                    List<uint16> accessorList = new .();
-                    GetAccessorDataFromBuffer<uint16>(buffer, start_byte, byteCount, sizeof(uint16), accessorList);
-                    res[idx].accessorData = .Unsigned_Short(accessorList);
+                    if (res[idx].makeAccessorInstance<uint16>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<uint16>(buffer, start_byte, byteCount, sizeof(uint16), accessorData);
+                    }
                     break;
                 case .Unsigned_Int:
-                    List<uint32> accessorList = new .();
-                    GetAccessorDataFromBuffer<uint32>(buffer, start_byte, byteCount, sizeof(uint32), accessorList);
-                    res[idx].accessorData = .Unsigned_Int(accessorList);
+                    if (res[idx].makeAccessorInstance<uint32>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<uint32>(buffer, start_byte, byteCount, sizeof(uint32), accessorData);
+                    }
                     break;
                 case .Float:
-                    List<float> accessorList = new .();
-                    GetAccessorDataFromBuffer<float>(buffer, start_byte, byteCount, sizeof(float), accessorList);
-                    res[idx].accessorData = .Float(accessorList);
+                    if (res[idx].makeAccessorInstance<float>(let accessorData))
+                    {
+                        GetAccessorDataFromBuffer<float>(buffer, start_byte, byteCount, sizeof(float), accessorData);
+                    }
                     break;
             	default: break;
             }
@@ -757,7 +748,7 @@ class gLTF
         return .Ok;
     }
 
-    private static void GetAccessorDataFromBuffer<T>(Span<uint8> buffer, int startPos, int endPos, int byteSize, List<T> accessorData)
+    private static void GetAccessorDataFromBuffer<T>(Span<uint8> buffer, int startPos, int endPos, int byteSize, AccessorData<T> accessorData)
     {
         for (int sliceidx = startPos;
             sliceidx < endPos || sliceidx < buffer.Length;
@@ -1027,11 +1018,11 @@ class gLTF
                     {
                         if (keepBinary)
                         {
-                            res[idx].uri = uri_parse(Uri.Str(new String(uri)), gltf_dir);
+                            uri_parse(res[idx].bytes, scope String(uri), gltf_dir);
                         }
                         else
                         {
-                            res[idx].uri = .Str(new String(uri));
+                            res[idx].uristr.Append(uri);
                         }
                     }
 
@@ -1155,21 +1146,19 @@ class gLTF
                 {
 		            if (TryGetStr(camobj, "name", let name))
                     {
-                        res[idx].name = new String(name);
+                        res[idx].name.Append(name);
                     }
 
 		            if (TryGetObj(camobj, "orthographic", let orthographic))
                     {
-                        Orthographic_Camera orthoType = Orthographic_Camera();
-                        orthographic_camera_parse(orthographic, ref orthoType);
-                        res[idx].type = .Orthographic(orthoType);
+                        res[idx].type.Append("orthographic");
+                        cameraTypeParse(orthographic, ref res[idx]);
                     }
 
 		            if (TryGetObj(camobj, "perspective", let perspective))
                     {
-                        Perspective_Camera perspType = Perspective_Camera();
-                        perspective_camera_parse(perspective, ref perspType);
-                        res[idx].type = .Perspective(perspType);
+                        res[idx].type.Append("perspective");
+                        cameraTypeParse(perspective, ref res[idx]);
                     }
 
 		            if (camobj.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1183,7 +1172,7 @@ class gLTF
                     }
 		        }
 
-		        if (res[idx].type == .Null)
+		        if (res[idx].type.Length < 1)
                 {
 		            return .Err(GLTFError(
                         .Missing_Required_Parameter, "cameras_parse", "type", idx));
@@ -1194,17 +1183,12 @@ class gLTF
 	    return .Ok;
 	}
 
-	private static Result<void, GLTFError> orthographic_camera_parse(Json.JsonObjectData parseObject, ref Orthographic_Camera res)
+	private static Result<void, GLTFError> cameraTypeParse(Json.JsonObjectData parseObject, ref Camera res)
     {
 		if (TryGetNum(parseObject, "xmag", let xmag))
         {
             // Required
             res.xmag = (float)xmag;
-        }
-        else
-        {
-            return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "xmag"));
         }
 
 		if (TryGetNum(parseObject, "ymag", let ymag))
@@ -1212,21 +1196,11 @@ class gLTF
             // Required
             res.ymag = (float)ymag;
         }
-        else
-        {
-            return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "ymag"));
-        }
 
 		if (TryGetNum(parseObject, "zfar", let zfar))
         {
             // Required
             res.zfar = (float)zfar;
-        }
-        else
-        {
-            return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "zfar"));
         }
 
 		if (TryGetNum(parseObject, "znear", let znear))
@@ -1237,72 +1211,29 @@ class gLTF
         else
         {
             return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "znear"));
+                .Missing_Required_Parameter, "cameraTypeParse", "znear"));
         }
 
-		if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
+        
+        if (TryGetNum(parseObject, "aspectRatio", let aspectRatio))
         {
-            res.extensions = extensions;
+            res.aspect_ratio = (float)aspectRatio;
         }
 
-        if (parseObject.TryGetValue(Types.EXTRAS_KEY, let extras))
-        {
-            res.extras = extras;
-        }
-
-	    return .Ok;
-	}
-
-	private static Result<void, GLTFError> perspective_camera_parse(Json.JsonObjectData parseObject, ref Perspective_Camera res)
-    {
-        res = Perspective_Camera();
-
-		if (TryGetNum(parseObject, "aspectRatio", let aspectRatio))
-        {
-		    res.aspect_ratio = (float)aspectRatio;
-        }
-
-		if (TryGetNum(parseObject, "yfov", let yfov))
+        if (TryGetNum(parseObject, "yfov", let yfov))
         {
             // Required
             res.yfov = (float)yfov;
         }
-        else
-        {
-            return .Err(GLTFError(
-	            .Missing_Required_Parameter, "orthographic_camera_parse", "yfov"));
-        }    
 
-        if (TryGetNum(parseObject, "zfar", let zfar))
+		if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
         {
-            // Required
-            res.zfar = (float)zfar;
-        }
-        else
-        {
-            return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "zfar"));
-        }
-
-        if (TryGetNum(parseObject, "znear", let znear))
-        {
-            // Required
-            res.znear = (float)znear;
-        }
-        else
-        {
-            return .Err(GLTFError(
-                .Missing_Required_Parameter, "orthographic_camera_parse", "znear"));
-        }
-
-        if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
-        {
-            res.extensions = extensions;
+            res.typeExtensions = extensions;
         }
 
         if (parseObject.TryGetValue(Types.EXTRAS_KEY, let extras))
         {
-            res.extras = extras;
+            res.typeExtras = extras;
         }
 
 	    return .Ok;
@@ -1344,12 +1275,12 @@ class gLTF
 
 		            if (TryGetStr(parseObject, "name", let name))
                     {
-                        res[idx].name = new String(name);
+                        res[idx].name.Append(scope String(name));
                     }
 
                     if (TryGetStr(parseObject, "uri", let uri))
                     {
-                        res[idx].uri = uri_parse(Uri.Str(scope String(name)), gltf_dir);
+                        uri_parse(res[idx].byte, scope String(uri), gltf_dir);
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
