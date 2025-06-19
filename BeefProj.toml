@@ -1,5 +1,11 @@
 FileVersion = 1
-Dependencies = {corlib = "*", json = "*"}
+Dependencies = {corlib = "*", json = "*", sead = "*"}
 
 [Project]
-Name = "gLTF"
+Name = "GLTF"
+DefaultNamespace = "gLTF"
+
+[[ProjectFolder.Items]]
+Type = "IgnoreFolder"
+Name = "example"
+AutoInclude = true

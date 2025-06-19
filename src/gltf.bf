@@ -3,12 +3,13 @@ using System.Collections;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using sead;
 
-namespace gLTF;
+namespace GLTF;
 
-using internal gLTF;
+using internal GLTF;
 
-class gLTF
+class GLTF
 {
 	private static int GLB_MAGIC = 0x46546c67;
 	private static int GLB_HEADER_SIZE = sizeof(GLB_Header);
@@ -18,7 +19,7 @@ class gLTF
 	/*
 	    Main library interface procedures
 	*/
-	public static Result<void, GLTFError> load_from_file(String file_name, GLTFData gltfData)
+	public static Result<void, GLTFError> LoadFromFile(String file_name, GLTFData gltfData)
     {
         if (!File.Exists(file_name))
         {
@@ -36,10 +37,10 @@ class gLTF
         String gltf_dir = scope String();
         Path.GetDirectoryPath(file_name, gltf_dir);
 
-	    Options options = Options()
+        Options options = Options()
         {
-	        gltf_dir = gltf_dir
-	    };
+            gltf_dir = gltf_dir
+        };
 
         String fext = scope String();
         Path.GetExtension(file_name, fext);
@@ -48,18 +49,18 @@ class gLTF
 	    switch (fext)
         {
     	    case ".gltf":
-    	        return parse(file_content, options, gltfData);
+    	        return Parse(file_content, options, gltfData);
 
     	    case ".glb":
     	        options.is_glb = true;
-    	        return parse(file_content, options, gltfData);
+    	        return Parse(file_content, options, gltfData);
 
     	    default:
                 return .Err(GLTFError(Error_Type.Unknown_File_Type, "load_from_file", file_name));
     	}
     }
 
-	public static Result<void, GLTFError> parse(List<uint8> file_content, Options opt, GLTFData gltfdata)
+	public static Result<void, GLTFError> Parse(List<uint8> file_content, Options opt, GLTFData gltfdata)
     {
 	    if (file_content.Count < GLB_HEADER_SIZE)
         {
@@ -683,7 +684,7 @@ class gLTF
             }
     
             int start_byte = res[idx].byte_offset + buffer_view.byte_offset;
-            int byteCount = start_byte + res[idx].count;
+            int bytesCount = res[idx].count;
 
             List<uint8> buffer = scope List<uint8>();
             if (bufferDict.ContainsKey(buffer_view.buffer))
@@ -703,43 +704,52 @@ class gLTF
                 }
             }
 
-            switch(res[idx].component_type)
+            switch (res[idx].type)
+            {
+                case .Vector2:
+                    bytesCount *= 2;
+                    break;
+                case .Vector3:
+                    bytesCount *= 3;
+                    break;
+                case .Vector4:
+                case .Matrix2:
+                    bytesCount *= 4;
+                    break;
+                case .Matrix3:
+                    bytesCount *= 9;
+                    break;
+                case .Matrix4:
+                    bytesCount *= 16;
+                    break;
+                default: break;
+            }
+
+            switch (res[idx].component_type)
             {
                 case .Unsigned_Byte:
-                    if (res[idx].makeAccessorInstance<uint8>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<uint8>(buffer, start_byte, byteCount, sizeof(uint8), accessorData);
-                    }
+                    res[idx].createUnsignedByteAccessor();
+                    GetAccessorDataFromBuffer<uint8>(buffer, start_byte, bytesCount, sizeof(uint8), res[idx].accessorDataUnsignedByte);
                     break;
                 case .Byte:
-                    if (res[idx].makeAccessorInstance<int8>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<int8>(buffer, start_byte, byteCount, sizeof(int8), accessorData);
-                    }
-                    break;
-                case .Short:
-                    if (res[idx].makeAccessorInstance<int16>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<int16>(buffer, start_byte, byteCount, sizeof(int16), accessorData);
-                    }
+                    res[idx].createByteAccessor();
+                    GetAccessorDataFromBuffer<int8>(buffer, start_byte, bytesCount, sizeof(int8), res[idx].accessorDataByte);
                     break;
                 case .Unsigned_Short:
-                    if (res[idx].makeAccessorInstance<uint16>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<uint16>(buffer, start_byte, byteCount, sizeof(uint16), accessorData);
-                    }
+                    res[idx].createUnsignedShortAccessor();
+                    GetAccessorDataFromBuffer<uint16>(buffer, start_byte, bytesCount, sizeof(uint16), res[idx].accessorDataUnsignedShort);
+                    break;
+                case .Short:
+                    res[idx].createShortAccessor();
+                    GetAccessorDataFromBuffer<int16>(buffer, start_byte, bytesCount, sizeof(int16), res[idx].accessorDataShort);    
                     break;
                 case .Unsigned_Int:
-                    if (res[idx].makeAccessorInstance<uint32>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<uint32>(buffer, start_byte, byteCount, sizeof(uint32), accessorData);
-                    }
+                    res[idx].createUnsignedIntAccessor();
+                    GetAccessorDataFromBuffer<uint32>(buffer, start_byte, bytesCount, sizeof(uint32), res[idx].accessorDataUnsignedInt);
                     break;
                 case .Float:
-                    if (res[idx].makeAccessorInstance<float>(let accessorData))
-                    {
-                        GetAccessorDataFromBuffer<float>(buffer, start_byte, byteCount, sizeof(float), accessorData);
-                    }
+                    res[idx].createFloatAccessor();
+                    GetAccessorDataFromBuffer<float>(buffer, start_byte, bytesCount, sizeof(float), res[idx].accessorDataFloat);
                     break;
             	default: break;
             }
@@ -748,10 +758,11 @@ class gLTF
         return .Ok;
     }
 
-    private static void GetAccessorDataFromBuffer<T>(Span<uint8> buffer, int startPos, int endPos, int byteSize, AccessorData<T> accessorData)
+    private static void GetAccessorDataFromBuffer<T>(Span<uint8> buffer, int startPos, int byteCount, int byteSize, List<T> accessorData)
     {
+        int endPos = startPos + (byteCount * byteSize);
         for (int sliceidx = startPos;
-            sliceidx < endPos || sliceidx < buffer.Length;
+            sliceidx < endPos && sliceidx < buffer.Length;
             sliceidx += byteSize)
         {
             Span<uint8> bytespan = buffer.Slice(sliceidx, byteSize);
@@ -1280,7 +1291,7 @@ class gLTF
 
                     if (TryGetStr(parseObject, "uri", let uri))
                     {
-                        uri_parse(res[idx].byte, scope String(uri), gltf_dir);
+                        uri_parse(res[idx].bytes, scope String(uri), gltf_dir);
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1373,12 +1384,20 @@ class gLTF
 
 		            if (TryGetObj(parseObject, "normalTexture", let normalTexture))
                     {
-		                texture_info_parse(normalTexture, .Normal, ref res[idx].normal_texture);
+		                if (texture_info_parse(normalTexture, .Normal, ref res[idx].normal_texture) case .Err)
+                        {
+                            return .Err(GLTFError(
+                                    .Invalid_Type, "materials_parse", "normals not parsed"));
+                        }    
                     }
 
 		            if (TryGetObj(parseObject, "occlusionTexture", let occlusionTexture))
                     {
-		                texture_info_parse(occlusionTexture, .Occlusion, ref res[idx].occlusion_texture);
+		                if (texture_info_parse(occlusionTexture, .Occlusion, ref res[idx].occlusion_texture) case .Err)
+                        {
+                            return .Err(GLTFError(
+	                            .Invalid_Type, "materials_parse", "occlusion not parsed"));
+                        }
                     }
 
 		            if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))
@@ -1407,7 +1426,11 @@ class gLTF
                 
                         if (TryGetObj(pbrMetallicRoughness, "baseColorTexture", let baseColorTexture))
                         {
-                             texture_info_parse(baseColorTexture, .Regular, ref res[idx].metallic_base_color_texture);
+                            if (texture_info_parse(baseColorTexture, .Regular, ref res[idx].metallic_base_color_texture) case .Err)
+                            {
+                                return .Err(GLTFError(
+	                                .Invalid_Type, "materials_parse", "base color not parsed"));
+                            }
                         }
                 
                         if (TryGetNum(pbrMetallicRoughness, "metallicFactor", let metallicFactor))
@@ -1424,7 +1447,11 @@ class gLTF
                 
                         if (TryGetObj(pbrMetallicRoughness, "metallicRoughnessTexture", let metallicRoughnessTexture))
                         {
-                             texture_info_parse(metallicRoughnessTexture, .Regular, ref res[idx].metallic_roughness_texture);
+                             if (texture_info_parse(metallicRoughnessTexture, .Regular, ref res[idx].metallic_roughness_texture) case .Err)
+                            {
+                                return .Err(GLTFError(
+	                                .Invalid_Type, "materials_parse", "metallic roughness color not parsed"));
+                            }
                         }
                 
                 		if (pbrMetallicRoughness.TryGetValue(Types.EXTENSIONS_KEY, let metallic_extensions))
@@ -1552,24 +1579,48 @@ class gLTF
 	    return .Ok;
     }
 
-	private static Result<void, GLTFError> mesh_primitives_parse(List<Json.JsonElement> array, ref List<Mesh_Primitive> res)
+	private static Result<void, GLTFError> mesh_primitives_parse(List<Json.JsonElement> array,
+        ref List<Mesh_Primitive> res)
     {
 		res.Resize(array.Count);
         for (int idx = 0; idx < array.Count; idx++)
         {
             res[idx] = Mesh_Primitive();
 		    res[idx].mode = .Triangles;
-            res[idx].attributes = new Dictionary<StringView, int>();
 
 		    if (array[idx] case .Object(let parseObject))
             {
                 if (TryGetObj(parseObject, "attributes", let attributes))
                 {
 	                // Required
-	                for(let attr in attributes)
+                    if (TryGetNum(attributes, "POSITION", let position))
                     {
-                        res[idx].attributes.Add(attr.key, (int)attr.value.AsNumber());
-		            }
+                        res[idx].attributes.Add(.Position, (int)position);
+                    }
+                    if (TryGetNum(attributes, "NORMAL", let normal))
+                    {
+                        res[idx].attributes.Add(.Normal, (int)normal);
+                    }
+                    if (TryGetNum(attributes, "TANGENT", let tangent))
+                    {
+                        res[idx].attributes.Add(.Tangent, (int)tangent);
+                    }
+                    if (TryGetNum(attributes, "TEXCOORD", let texcoord))
+                    {
+                        res[idx].attributes.Add(.TexCoord, (int)texcoord);
+                    }
+                    if (TryGetNum(attributes, "COLOR", let color))
+                    {
+                        res[idx].attributes.Add(.Color, (int)color);
+                    }
+                    if (TryGetNum(attributes, "WEIGHTS", let weights))
+                    {
+                        res[idx].attributes.Add(.Weights, (int)weights);
+                    }
+                    if (TryGetNum(attributes, "CUSTOM", let custom))
+                    {
+                        res[idx].attributes.Add(.Custom, (int)custom);
+                    }
                 }
 
 		        if (TryGetNum(parseObject, "indices", let indices))
@@ -1588,9 +1639,47 @@ class gLTF
 	                res[idx].mode = (Mesh_Primitive_Mode)mode;
                 }
 
-	            if (TryGetObj(parseObject,  "targets", let targets))
+	            if (TryGetArr(parseObject, "targets", let targets))
                 {
-                    // TODO!
+                    res[idx].targets.Resize(targets.Count);
+                    for (int j = 0; j < targets.Count; j++)
+                    {
+                        if (array[idx] case .Object(let targetAttribute))
+                        {
+                            Dictionary<Mesh_Target_Type, int> targetDict =
+                                scope Dictionary<Mesh_Target_Type, int>();
+
+                            if (TryGetNum(targetAttribute, "POSITION", let position))
+                            {
+                                targetDict.Add(.Position, (int)position);
+                            }
+                            if (TryGetNum(targetAttribute, "NORMAL", let normal))
+                            {
+                                targetDict.Add(.Normal, (int)normal);
+                            }
+                            if (TryGetNum(targetAttribute, "TANGENT", let tangent))
+                            {
+                                targetDict.Add(.Tangent, (int)tangent);
+                            }
+                            if (TryGetNum(targetAttribute, "TEXCOORD", let texcoord))
+                            {
+                                targetDict.Add(.TexCoord, (int)texcoord);
+                            }
+                            if (TryGetNum(targetAttribute, "COLOR", let color))
+                            {
+                                targetDict.Add(.Color, (int)color);
+                            }
+                            if (TryGetNum(targetAttribute, "WEIGHTS", let weights))
+                            {
+                                targetDict.Add(.Weights, (int)weights);
+                            }
+                            if (TryGetNum(targetAttribute, "CUSTOM", let custom))
+                            {
+                                targetDict.Add(.Custom, (int)custom);
+                            }
+                            res[idx].addNewTarget(targetDict.GetEnumerator());
+                        }   
+                    }
                 }
 
 		        if (parseObject.TryGetValue(Types.EXTENSIONS_KEY, let extensions))

@@ -1,7 +1,7 @@
 using System;
 using System.Collections;
 
-namespace gLTF;
+namespace GLTF;
 
 struct Options : IDisposable
 {
@@ -148,22 +148,6 @@ enum Component_Type
 	Float
 }
 
-interface IAccessorData
-{
-    public void getList<T>(List<T> mylist);
-}
-
-class AccessorData<T> : List<T>, IAccessorData
-{
-    public void getList<T2>(List<T2> mylist) where T2 : operator explicit T
-    {
-        for (let ac in this)
-        {
-            mylist.Add((.)ac);
-        }
-    }
-}
-
 class Accessor
 {
 	public int byte_offset;
@@ -181,7 +165,13 @@ class Accessor
     public List<Accessor_Sparse_Values> values; // Required
     public Extensions accessorExtensions;
     public Extras accessorExtras;
-    public IAccessorData accessorData;
+
+    public List<int8> accessorDataByte;
+    public List<uint8> accessorDataUnsignedByte;
+    public List<int16> accessorDataShort;
+    public List<uint16> accessorDataUnsignedShort;
+    public List<uint32> accessorDataUnsignedInt;
+    public List<float> accessorDataFloat;
 
     public this()
     {
@@ -201,10 +191,12 @@ class Accessor
             delete values;
         }
 
-        if (accessorData != null)
-        {
-            delete accessorData;
-        }
+        delete accessorDataByte;
+        delete accessorDataUnsignedByte;
+        delete accessorDataShort;
+        delete accessorDataUnsignedShort;
+        delete accessorDataUnsignedInt;
+        delete accessorDataFloat;
  
         if (name != null)
         {
@@ -212,17 +204,52 @@ class Accessor
         }
     }
 
-    public bool makeAccessorInstance<T>(out AccessorData<T> newAccessorData)
+    public void createByteAccessor()
     {
-        if (accessorData != null)
+        if (accessorDataByte == null)
         {
-            delete accessorData;
+            accessorDataByte = new List<int8>();
         }
+    }
 
-        newAccessorData = new AccessorData<T>();
-        accessorData = newAccessorData;
+    public void createUnsignedByteAccessor()
+    {
+        if (accessorDataUnsignedByte == null)
+        {
+            accessorDataUnsignedByte = new List<uint8>();
+        }
+    }
 
-        return true;
+    public void createShortAccessor()
+    {
+        if (accessorDataShort == null)
+        {
+            accessorDataShort = new List<int16>();
+        }
+    }
+
+    public void createUnsignedShortAccessor()
+    {
+        if (accessorDataUnsignedShort == null)
+        {
+            accessorDataUnsignedShort = new List<uint16>();
+        }
+    }
+
+    public void createUnsignedIntAccessor()
+    {
+        if (accessorDataUnsignedInt == null)
+        {
+            accessorDataUnsignedInt = new List<uint32>();
+        }
+    }
+
+    public void createFloatAccessor()
+    {
+        if (accessorDataFloat == null)
+        {
+            accessorDataFloat = new List<float>();
+        }
     }
 }
 
@@ -442,15 +469,9 @@ struct Image : IDisposable
 
     public void Dispose()
     {
-        if (name != null)
-        {
-            delete name;
-        }
-
-        if (bytes != null)
-        {
-            delete bytes;
-        }
+        delete name;
+        delete bytes;
+        delete uristr;
     }
 }
 
@@ -540,31 +561,37 @@ struct Mesh : IDisposable
 
 struct Mesh_Primitive : IDisposable
 {
-    public Dictionary<StringView, int> attributes; // Required
+    public Dictionary<Mesh_Target_Type, int> attributes; // Required
     public Mesh_Primitive_Mode mode; // Default Triangles(4)
     public int? indices;
     public int? material;
-    public List<Mesh_Target> targets;
+    public List<Dictionary<Mesh_Target_Type, int>> targets;
     public Extensions extensions;
     public Extras extras;
 
     public this()
     {
         this = default;
+        attributes = new Dictionary<Mesh_Target_Type, int>();
         targets = new .();
+    }
+
+    public void addNewTarget(Dictionary<Mesh_Target_Type, int>.Enumerator targetAttributes)
+    {
+        targets.Add(new Dictionary<Mesh_Target_Type, int>(targetAttributes));
     }
 
     public void Dispose()
     {
-        if (attributes != null)
-        {
-            delete attributes;
-        }
-
+        delete attributes;
         if (targets != null)
         {
-            DeleteContainerAndDisposeItems!(targets);
+            for (int i = 0; i < targets.Count; i++)
+            {
+                delete targets[i];
+            }
         }
+        delete targets;
     }
 }
 
@@ -577,23 +604,6 @@ enum Mesh_Primitive_Mode
     Triangles, // Default
     Triangle_Strip,
     Triangle_Fan
-}
-
-// TODO: Verify if this is correct
-struct Mesh_Target : IDisposable
-{
-    public Mesh_Target_Type type;
-    public int index;
-    public Accessor data;
-    public String name;
-
-    public void Dispose()
-    {
-        if (name != null)
-        {
-            delete name;
-        }
-    }
 }
 
 // TODO: Verify if this is correct

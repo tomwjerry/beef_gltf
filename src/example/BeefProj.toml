@@ -1,0 +1,11 @@
+FileVersion = 1
+Dependencies = {corlib = "*", GLTF = "*", SDL3 = "*"}
+
+[Project]
+Name = "example"
+StartupObject = "GLTFExample.ExampleUsage"
+DefaultNamespace = "GLTFExample"
+
+[[ProjectFolder.Items]]
+Type = "Source"
+Path = "ExampleUsage.bf"
