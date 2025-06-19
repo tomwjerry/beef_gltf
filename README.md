@@ -4,7 +4,7 @@ GLTF importer made in Beef. Requires json tree reader and writer https://github.
 See the example how to use. Note that the example requires SDL3.
 
 Simply put, this should load a gLTF mesh:
-```
+```Beef
 // Make a stucture to load the data
 GLTFData gltfData = scope GLTFData();
 // This is a helper structure, to retrive data for each mesh.
