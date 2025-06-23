@@ -4,8 +4,3 @@ Dependencies = {corlib = "*", json = "*", sead = "*"}
 [Project]
 Name = "GLTF"
 DefaultNamespace = "gLTF"
-
-[[ProjectFolder.Items]]
-Type = "IgnoreFolder"
-Name = "example"
-AutoInclude = true
